@@ -71,12 +71,13 @@ train:
 
 quantize:
 	$(PYTHON) -m nano_kws.quantize \
-	    --checkpoint assets/ds_cnn_small.pt \
-	    --output assets/ds_cnn_small_int8.onnx
+	    --checkpoint assets/ds_cnn_w0p5.pt \
+	    --output assets/ds_cnn_small_int8.onnx \
+	    --fp32-output assets/ds_cnn_small_fp32.onnx
 
 export:
 	$(PYTHON) -m nano_kws.export_onnx \
-	    --checkpoint assets/ds_cnn_small.pt \
+	    --checkpoint assets/ds_cnn_w0p5.pt \
 	    --output assets/ds_cnn_small_fp32.onnx
 
 benchmark:

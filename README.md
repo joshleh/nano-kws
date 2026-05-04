@@ -12,16 +12,26 @@ fp32 baseline — plus a live mic demo and a C++ inference reference.
 
 ## TL;DR
 
+> **Status:** the bundled checkpoint was trained for **1 epoch on CPU**
+> as an end-to-end pipeline smoke. Top-1 is therefore well below what
+> the architecture can deliver — the columns to read are the **deltas**:
+> INT8 keeps fp32 accuracy within ~1 pp while shrinking the model 2.6x
+> on disk and running 1.27x faster on host CPU. The numbers refresh
+> automatically the next time `make train && make quantize && make benchmark`
+> runs (e.g. on a GPU box for 30 epochs).
+
 <!-- BEGIN_BENCHMARK_TABLE -->
 
-_Numbers populated by `make benchmark` once a trained checkpoint exists._
-_The benchmark also regenerates [`assets/benchmark_table.md`](assets/benchmark_table.md)._
+| Variant | Runtime | Params | MACs | Top-1 acc | Size on disk | Latency mean | Latency p50 | Latency p95 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| DS-CNN small fp32 | PyTorch (CPU) | 62.1 K | 44.13 M | 18.86% | n/a | 5.919 ms | 4.954 ms | 12.500 ms |
+| DS-CNN small fp32 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 18.86% | 242.6 KB | 0.479 ms | 0.466 ms | 0.610 ms |
+| DS-CNN small INT8 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 17.84% | 93.4 KB | 0.378 ms | 0.379 ms | 0.513 ms |
 
-| Variant            | Params | MACs / inference | Top-1 acc (12-class) | Model size on disk | Latency (CPU, single inference) |
-| ------------------ | ------ | ---------------- | -------------------- | ------------------ | ------------------------------- |
-| DS-CNN small fp32  | _TBD_  | _TBD_            | _TBD_                | _TBD_              | _TBD_                           |
-| DS-CNN small INT8  | _TBD_  | _TBD_            | _TBD_                | _TBD_              | _TBD_                           |
-| Δ (INT8 vs fp32)   | —      | —                | _TBD_ pp             | _TBD_×             | _TBD_×                          |
+**INT8 vs fp32 (ONNX Runtime):**
+- Size: 38.5% of fp32 (242.6 KB -> 93.4 KB)
+- Latency: 1.27x (0.479 ms -> 0.378 ms mean)
+- Top-1 accuracy: -1.02 pp
 
 <!-- END_BENCHMARK_TABLE -->
 

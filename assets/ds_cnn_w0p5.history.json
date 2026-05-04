@@ -1,0 +1,38 @@
+{
+  "config": {
+    "width": 0.5,
+    "n_blocks": 4,
+    "base_channels": 224,
+    "num_classes": 12,
+    "epochs": 1,
+    "batch_size": 256,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "seed": 0,
+    "silence_per_class_ratio": 1.0,
+    "unknown_per_class_ratio": 1.0,
+    "snr_db_low": 5.0,
+    "snr_db_high": 20.0,
+    "bg_mix_prob": 0.8,
+    "spec_freq_mask": 8,
+    "spec_time_mask": 16,
+    "spec_n_freq_masks": 2,
+    "spec_n_time_masks": 2,
+    "device": "cpu",
+    "num_workers": 2
+  },
+  "parameters": 62060,
+  "macs": 44134720,
+  "best_epoch": 1,
+  "best_val_acc": 0.19918973666441595,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 2.1317977176772223,
+      "train_acc": 0.3447808159722222,
+      "val_loss": 4.493334374394525,
+      "val_acc": 0.19918973666441595,
+      "seconds": 259.3907972999732
+    }
+  ]
+}

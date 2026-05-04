@@ -1,0 +1,25 @@
+{
+  "labels": [
+    "yes",
+    "no",
+    "up",
+    "down",
+    "left",
+    "right",
+    "on",
+    "off",
+    "stop",
+    "go",
+    "_silence_",
+    "_unknown_"
+  ],
+  "num_classes": 12,
+  "sample_rate": 16000,
+  "input_shape": [
+    1,
+    40,
+    97
+  ],
+  "input_name": "input",
+  "output_name": "logits"
+}
