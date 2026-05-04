@@ -12,14 +12,18 @@ fp32 baseline — plus a live mic demo and a C++ inference reference.
 
 ## TL;DR
 
+<!-- BEGIN_BENCHMARK_TABLE -->
+
+_Numbers populated by `make benchmark` once a trained checkpoint exists._
+_The benchmark also regenerates [`assets/benchmark_table.md`](assets/benchmark_table.md)._
+
 | Variant            | Params | MACs / inference | Top-1 acc (12-class) | Model size on disk | Latency (CPU, single inference) |
 | ------------------ | ------ | ---------------- | -------------------- | ------------------ | ------------------------------- |
 | DS-CNN small fp32  | _TBD_  | _TBD_            | _TBD_                | _TBD_              | _TBD_                           |
 | DS-CNN small INT8  | _TBD_  | _TBD_            | _TBD_                | _TBD_              | _TBD_                           |
 | Δ (INT8 vs fp32)   | —      | —                | _TBD_ pp             | _TBD_×             | _TBD_×                          |
 
-> Numbers populated by `make benchmark`; table is regenerated from
-> [`assets/benchmark_table.md`](assets/benchmark_table.md).
+<!-- END_BENCHMARK_TABLE -->
 
 A pre-trained INT8 model is committed to [`assets/`](assets/) so a fresh
 clone can run the benchmark and live demo **without training**.
@@ -146,7 +150,7 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 - [x] Phase 1 — data pipeline + log-mel featurizer
 - [x] Phase 2 — DS-CNN model + training loop _(code; trained checkpoint pending)_
 - [x] Phase 3 — PTQ → INT8 ONNX export _(code; bundled INT8 asset pending)_
-- [ ] Phase 4 — fp32 vs INT8 benchmark + README numbers
+- [x] Phase 4 — fp32 vs INT8 benchmark + README numbers (code; numbers populate once `make train` ships a checkpoint)
 - [ ] Phase 5 — multi-size sweep + polish
 
 **Stretch**

@@ -81,9 +81,11 @@ export:
 
 benchmark:
 	$(PYTHON) -m nano_kws.benchmark \
+	    --checkpoint assets/ds_cnn_w0p5.pt \
 	    --fp32 assets/ds_cnn_small_fp32.onnx \
 	    --int8 assets/ds_cnn_small_int8.onnx \
-	    --output assets/benchmark_table.md
+	    --output assets/benchmark_table.md \
+	    --update-readme
 
 sweep:
 	$(PYTHON) -m scripts.sweep_sizes
