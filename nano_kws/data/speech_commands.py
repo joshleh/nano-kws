@@ -29,8 +29,9 @@ import random
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
 import torch
-import torchaudio
 from torch.utils.data import DataLoader, Dataset
 from torchaudio.datasets import SPEECHCOMMANDS
 
@@ -50,6 +51,28 @@ def _classify_label(label: str) -> int:
     return config.LABEL_TO_INDEX[config.UNKNOWN_LABEL]
 
 
+def _load_wav_mono(path: str | Path) -> torch.Tensor:
+    """Load a WAV file as a 1-D float32 mono torch tensor at SAMPLE_RATE.
+
+    Uses ``soundfile`` directly rather than ``torchaudio.load``: torchaudio
+    2.9+ delegates loading to ``torchcodec`` (which pulls ffmpeg as a heavy
+    dependency), and Speech Commands clips are simple 16 kHz 16-bit PCM
+    WAVs that ``soundfile`` reads natively. Keeping the runtime dependency
+    surface small matters more for an edge-AI portfolio piece than the
+    convenience of torchaudio's loader.
+    """
+    data, sr = sf.read(str(path), dtype="float32", always_2d=False)
+    if sr != config.SAMPLE_RATE:
+        raise RuntimeError(
+            f"{path} has sample rate {sr}; expected {config.SAMPLE_RATE}. "
+            "Speech Commands v0.02 is uniformly 16 kHz; resampling is not implemented "
+            "(it would also break the bit-exact match between training and inference)."
+        )
+    if data.ndim == 2:
+        data = data.mean(axis=1)  # mono
+    return torch.from_numpy(np.ascontiguousarray(data))
+
+
 def _load_background_noise(root: Path) -> list[torch.Tensor]:
     """Load all WAVs in ``<root>/_background_noise_/`` as 1-D float32 tensors."""
     bg_dir = root / _BACKGROUND_FOLDER
@@ -58,12 +81,7 @@ def _load_background_noise(root: Path) -> list[torch.Tensor]:
             f"Expected background noise directory at {bg_dir}. "
             "Has the dataset been downloaded? Try `make download-data`."
         )
-    clips: list[torch.Tensor] = []
-    for wav_path in sorted(bg_dir.glob("*.wav")):
-        waveform, sr = torchaudio.load(str(wav_path))
-        if sr != config.SAMPLE_RATE:
-            waveform = torchaudio.functional.resample(waveform, sr, config.SAMPLE_RATE)
-        clips.append(waveform.mean(dim=0).to(torch.float32))  # mono
+    clips = [_load_wav_mono(p) for p in sorted(bg_dir.glob("*.wav"))]
     if not clips:
         raise FileNotFoundError(f"No background noise WAVs found in {bg_dir}.")
     return clips
@@ -190,8 +208,11 @@ class SpeechCommandsKWS(Dataset):
     def __getitem__(self, i: int) -> tuple[torch.Tensor, int]:
         kind, payload = self._index[i]
         if kind == "clip":
-            waveform, _sr, label, *_ = self._base[payload]
-            wav = pad_or_crop(waveform.mean(dim=0).to(torch.float32))
+            # Bypass self._base[payload] (which would call torchaudio.load ->
+            # torchcodec) and read the WAV directly with soundfile.
+            file_path, _sr, label, *_ = self._base.get_metadata(payload)
+            full_path = Path(self._base._archive) / file_path
+            wav = pad_or_crop(_load_wav_mono(full_path))
             return wav, _classify_label(label)
 
         # silence
