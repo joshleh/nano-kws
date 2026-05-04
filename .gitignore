@@ -1,0 +1,83 @@
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Virtual envs ---------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# --- Test / coverage / lint caches ---------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# --- Editor / OS ---------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Project: data and trained artefacts ---------------------------------
+# Speech Commands v2 is ~2.4 GB. Cache lives outside the repo by default
+# (~/.cache/nano_kws/), but ignore any local copies just in case.
+# Anchor to repo root so we don't accidentally hide the nano_kws/data/ package.
+/data/
+*.tar.gz
+*.wav
+
+# Trained PyTorch checkpoints — only the committed asset (assets/*.pt) is
+# tracked, everything else is regenerable.
+*.pt
+*.pth
+!assets/*.pt
+!assets/*.pth
+
+# Allow committed ONNX assets, ignore stray exports elsewhere.
+*.onnx
+!assets/*.onnx
+
+# Logs / runs
+runs/
+logs/
+*.log
+wandb/
+mlruns/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# --- C++ build artefacts -------------------------------------------------
+cpp/build/
+cpp/cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.exe

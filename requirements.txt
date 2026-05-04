@@ -1,0 +1,10 @@
+# Runtime-only dependencies. These are sufficient to load the bundled INT8
+# ONNX model from assets/, run the benchmark, and launch the Streamlit demo.
+#
+# For training, evaluation, quantization, and export, also install the dev
+# extras: `pip install -e .[dev]` (see requirements-dev.txt).
+numpy>=1.26
+onnxruntime>=1.17
+soundfile>=0.12
+streamlit>=1.32
+sounddevice>=0.4.6

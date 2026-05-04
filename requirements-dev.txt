@@ -1,0 +1,14 @@
+# Development / training dependencies. Includes everything in requirements.txt
+# plus PyTorch, torchaudio, ONNX, plotting, and the test/lint toolchain.
+-r requirements.txt
+
+torch>=2.2
+torchaudio>=2.2
+onnx>=1.16
+matplotlib>=3.8
+pandas>=2.2
+tqdm>=4.66
+pytest>=8.0
+pytest-cov>=5.0
+ruff>=0.4
+pre-commit>=3.6

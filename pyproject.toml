@@ -1,0 +1,115 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nano-kws"
+version = "0.1.0"
+description = "Edge-deployable keyword spotter: PyTorch DS-CNN, INT8 PTQ, ONNX export, benchmarks."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Joshua Lee" }]
+keywords = ["keyword-spotting", "edge-ai", "quantization", "onnx", "pytorch", "audio"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Runtime-only deps (inference, demo, benchmark on the bundled INT8 model).
+# Training-time deps (torch, torchaudio, etc.) live in [project.optional-dependencies].dev.
+dependencies = [
+    "numpy>=1.26",
+    "onnxruntime>=1.17",
+    "soundfile>=0.12",
+    "streamlit>=1.32",
+    "sounddevice>=0.4.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "torch>=2.2",
+    "torchaudio>=2.2",
+    "onnx>=1.16",
+    "matplotlib>=3.8",
+    "pandas>=2.2",
+    "tqdm>=4.66",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+    "pre-commit>=3.6",
+]
+
+[project.scripts]
+nano-kws-train     = "nano_kws.train:main"
+nano-kws-evaluate  = "nano_kws.evaluate:main"
+nano-kws-quantize  = "nano_kws.quantize:main"
+nano-kws-export    = "nano_kws.export_onnx:main"
+nano-kws-benchmark = "nano_kws.benchmark:main"
+
+[project.urls]
+Repository = "https://github.com/joshualee/nano-kws"
+
+[tool.setuptools.packages.find]
+include = ["nano_kws*"]
+exclude = ["tests*", "scripts*", "app*", "cpp*", "notebooks*", "docs*", "assets*"]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["notebooks", "assets", "cpp"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",  # line length is enforced by formatter, not linter
+    "B008",  # function calls in argument defaults are common in CLIs
+]
+
+[tool.ruff.lint.per-file-ignores]
+# B011: asserts in tests are fine.
+# SIM300: invariants like `config.X == derived_expr` are clearer left-to-right.
+"tests/*" = ["B011", "SIM300"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+filterwarnings = [
+    "ignore::DeprecationWarning:torch.*",
+    "ignore::UserWarning:torchaudio.*",
+]
+
+[tool.coverage.run]
+source = ["nano_kws"]
+omit = ["nano_kws/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
