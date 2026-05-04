@@ -43,10 +43,14 @@ N_MELS: int = 40
 F_MIN: float = 20.0
 F_MAX: float = SAMPLE_RATE / 2  # Nyquist
 
-# Number of mel frames per 1-second clip. With 16 kHz audio and a 10 ms hop,
-# torchaudio's MelSpectrogram with center=True yields ceil(16000 / 160) + 1 = 101
-# frames. We trim to a fixed N_FRAMES for a deterministic input shape.
-N_FRAMES: int = 98
+# Number of mel frames produced per 1-second clip. Derived from
+# torchaudio.MelSpectrogram(center=False) framing:
+#   floor((CLIP_SAMPLES - N_FFT) / HOP_LENGTH) + 1
+#   = floor((16000 - 512) / 160) + 1
+#   = 96 + 1 = 97
+# Bumping any of CLIP_SAMPLES, N_FFT, HOP_LENGTH changes this; keep this
+# constant in lock-step or the featurizer will raise.
+N_FRAMES: int = 97
 
 INPUT_SHAPE: tuple[int, int, int] = (1, N_MELS, N_FRAMES)
 """(channels, mel_bins, frames) tensor layout the model consumes."""

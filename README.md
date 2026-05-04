@@ -142,8 +142,8 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 
 **MVP**
 
-- [ ] Phase 0 — repo scaffold, CI, packaging
-- [ ] Phase 1 — data pipeline + log-mel featurizer
+- [x] Phase 0 — repo scaffold, CI, packaging
+- [x] Phase 1 — data pipeline + log-mel featurizer
 - [ ] Phase 2 — DS-CNN model + training loop
 - [ ] Phase 3 — PTQ → INT8 ONNX export
 - [ ] Phase 4 — fp32 vs INT8 benchmark + README numbers
