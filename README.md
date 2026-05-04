@@ -165,7 +165,7 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 
 **Stretch**
 
-- [ ] Streamlit live mic demo
+- [x] Streamlit live mic demo (`make app`)
 - [ ] C++ inference harness (ONNX Runtime C API)
 - [ ] Quantization-aware training (only if PTQ accuracy drop is large)
 - [ ] Hand-written depthwise-separable conv microbenchmark (NumPy → C/SIMD vs ATen)
