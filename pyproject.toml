@@ -101,6 +101,10 @@ addopts = "-ra --strict-markers --strict-config"
 filterwarnings = [
     "ignore::DeprecationWarning:torch.*",
     "ignore::UserWarning:torchaudio.*",
+    # We intentionally use torch.onnx.export(dynamo=False) — the legacy
+    # TorchScript exporter has no extra deps and produces stable graphs
+    # for plain conv/BN/linear models.
+    "ignore:You are using the legacy TorchScript-based ONNX export:DeprecationWarning",
 ]
 
 [tool.coverage.run]

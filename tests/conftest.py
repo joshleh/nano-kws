@@ -2,9 +2,17 @@
 
 CI never downloads Speech Commands (2.4 GB). All fixtures here are
 synthetic so that the test suite runs in seconds on a fresh clone.
+
+Phase 3 fixtures (``tiny_model``, ``fp32_onnx``, ``int8_onnx``) build a
+freshly-initialised DS-CNN and run it through the full export +
+quantization pipeline once per session, so the export/quantize/infer
+test files can share the artefacts without paying the construction cost
+each test.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -41,9 +49,41 @@ def white_noise_waveform(rng: np.random.Generator) -> np.ndarray:
 
 @pytest.fixture
 def synthetic_logmel(rng: np.random.Generator) -> np.ndarray:
-    """A fake log-mel tensor with the model's expected input shape.
-
-    Lets quantization / inference / benchmark tests run before the real
-    featurizer is implemented.
-    """
+    """A fake log-mel tensor with the model's expected input shape."""
     return rng.standard_normal(config.INPUT_SHAPE).astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 fixtures: a tiny DS-CNN built and exported once per test session.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def tiny_model():
+    """Smallest DS-CNN we sweep over (w=0.25). Float, eval mode, on CPU."""
+    import torch
+
+    from nano_kws.models.ds_cnn import build_ds_cnn
+
+    torch.manual_seed(0)
+    model = build_ds_cnn(width_multiplier=0.25).cpu().eval()
+    return model
+
+
+@pytest.fixture(scope="session")
+def fp32_onnx(tmp_path_factory: pytest.TempPathFactory, tiny_model) -> Path:
+    """Tiny DS-CNN exported to fp32 ONNX (built once per test session)."""
+    from nano_kws.export_onnx import export_to_onnx
+
+    out = tmp_path_factory.mktemp("nano_kws_p3") / "tiny_fp32.onnx"
+    return export_to_onnx(model=tiny_model, output_path=out)
+
+
+@pytest.fixture(scope="session")
+def int8_onnx(tmp_path_factory: pytest.TempPathFactory, tiny_model, fp32_onnx) -> Path:
+    """Tiny DS-CNN quantised to INT8 ONNX (synthetic calibration)."""
+    from nano_kws.quantize import quantize_onnx, synthetic_calibration_batches
+
+    out = tmp_path_factory.mktemp("nano_kws_p3_int8") / "tiny_int8.onnx"
+    batches = synthetic_calibration_batches(n_batches=8, batch_size=4)
+    return quantize_onnx(fp32_path=fp32_onnx, int8_path=out, calibration_batches=batches)

@@ -144,8 +144,8 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 
 - [x] Phase 0 — repo scaffold, CI, packaging
 - [x] Phase 1 — data pipeline + log-mel featurizer
-- [ ] Phase 2 — DS-CNN model + training loop
-- [ ] Phase 3 — PTQ → INT8 ONNX export
+- [x] Phase 2 — DS-CNN model + training loop _(code; trained checkpoint pending)_
+- [x] Phase 3 — PTQ → INT8 ONNX export _(code; bundled INT8 asset pending)_
 - [ ] Phase 4 — fp32 vs INT8 benchmark + README numbers
 - [ ] Phase 5 — multi-size sweep + polish
 
