@@ -17,7 +17,7 @@ earbuds, doorbells, and smart-home hubs.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [![nano-kws live demo screenshot](assets/streamlit_demo.png)](https://nano-kws.streamlit.app/)
-<sub>↑ The live demo at [nano-kws.streamlit.app](https://nano-kws.streamlit.app/). Drop in a 16 kHz WAV in the **Upload WAV** tab, or upload a longer recording in **Continuous** to watch the model fire keyword detections over time.</sub>
+<sub>↑ Continuous-mode tab of the live demo at [nano-kws.streamlit.app](https://nano-kws.streamlit.app/): a 10 s recording streamed through the bundled INT8 model with a 200 ms hop and EMA-smoothed per-keyword posteriors, surfacing four detections (`yes`, `yes`, `no`, `on`). Sidebar exposes the streaming knobs — window hop, smoothing alpha, detection threshold, refractory.</sub>
 
 ---
 
