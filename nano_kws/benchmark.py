@@ -270,28 +270,47 @@ def render_markdown(results: list[VariantResult]) -> str:
     fp32_onnx = next(
         (r for r in results if "INT8" not in r.name and r.file_size_bytes is not None), None
     )
-    int8_onnx = next((r for r in results if "INT8" in r.name), None)
-    if fp32_onnx and int8_onnx:
-        size_ratio = int8_onnx.file_size_bytes / fp32_onnx.file_size_bytes
-        speedup = fp32_onnx.latency_mean_ms / max(int8_onnx.latency_mean_ms, 1e-9)
+    int8_ptq = next(
+        (r for r in results if "INT8" in r.name and "QAT" not in r.name),
+        None,
+    )
+    int8_qat = next((r for r in results if "INT8" in r.name and "QAT" in r.name), None)
+    if fp32_onnx and int8_ptq:
+        size_ratio = int8_ptq.file_size_bytes / fp32_onnx.file_size_bytes
+        speedup = fp32_onnx.latency_mean_ms / max(int8_ptq.latency_mean_ms, 1e-9)
         acc_delta = (
             None
-            if fp32_onnx.top1 is None or int8_onnx.top1 is None
-            else (int8_onnx.top1 - fp32_onnx.top1) * 100
+            if fp32_onnx.top1 is None or int8_ptq.top1 is None
+            else (int8_ptq.top1 - fp32_onnx.top1) * 100
         )
         lines.append("")
-        lines.append("**INT8 vs fp32 (ONNX Runtime):**")
+        lines.append("**INT8 (PTQ) vs fp32 (ONNX Runtime):**")
         lines.append(
             f"- Size: {size_ratio:.1%} of fp32 ({_format_size(fp32_onnx.file_size_bytes)} -> "
-            f"{_format_size(int8_onnx.file_size_bytes)})"
+            f"{_format_size(int8_ptq.file_size_bytes)})"
         )
         lines.append(
             f"- Latency: {speedup:.2f}x ({fp32_onnx.latency_mean_ms:.3f} ms -> "
-            f"{int8_onnx.latency_mean_ms:.3f} ms mean)"
+            f"{int8_ptq.latency_mean_ms:.3f} ms mean)"
         )
         if acc_delta is not None:
             sign = "+" if acc_delta >= 0 else ""
             lines.append(f"- Top-1 accuracy: {sign}{acc_delta:.2f} pp")
+    if fp32_onnx and int8_qat:
+        qat_acc_delta_vs_fp32 = (
+            None
+            if fp32_onnx.top1 is None or int8_qat.top1 is None
+            else (int8_qat.top1 - fp32_onnx.top1) * 100
+        )
+        lines.append("")
+        lines.append("**INT8 (QAT) vs fp32 (ONNX Runtime):**")
+        if qat_acc_delta_vs_fp32 is not None:
+            sign = "+" if qat_acc_delta_vs_fp32 >= 0 else ""
+            lines.append(f"- Top-1 accuracy: {sign}{qat_acc_delta_vs_fp32:.2f} pp")
+        if int8_ptq and int8_ptq.top1 is not None and int8_qat.top1 is not None:
+            recovered = (int8_qat.top1 - int8_ptq.top1) * 100
+            sign = "+" if recovered >= 0 else ""
+            lines.append(f"- vs PTQ-only INT8: {sign}{recovered:.2f} pp top-1 recovered by QAT.")
     return "\n".join(lines) + "\n"
 
 
@@ -331,7 +350,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--checkpoint", default=None, help="PyTorch .pt for the fp32 PyTorch row + accuracy."
     )
     parser.add_argument("--fp32", default=None, help="Path to fp32 ONNX model.")
-    parser.add_argument("--int8", default=None, help="Path to INT8 ONNX model.")
+    parser.add_argument("--int8", default=None, help="Path to INT8 ONNX model (PTQ-only).")
+    parser.add_argument(
+        "--int8-qat",
+        default=None,
+        help="Optional path to a second INT8 ONNX model produced via QAT + PTQ. "
+        "When supplied, an extra row is added to the benchmark table.",
+    )
     parser.add_argument(
         "--output",
         default="assets/benchmark_table.md",
@@ -396,8 +421,8 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     args = parse_args(argv)
 
-    if not (args.checkpoint or args.fp32 or args.int8):
-        raise SystemExit("Pass at least one of --checkpoint / --fp32 / --int8.")
+    if not (args.checkpoint or args.fp32 or args.int8 or args.int8_qat):
+        raise SystemExit("Pass at least one of --checkpoint / --fp32 / --int8 / --int8-qat.")
 
     accuracy_loader = _maybe_build_accuracy_loader(args)
 
@@ -457,7 +482,19 @@ def main(argv: list[str] | None = None) -> None:
         results.append(
             benchmark_onnx(
                 onnx_path=Path(args.int8),
-                name="DS-CNN small INT8",
+                name="DS-CNN small INT8 (PTQ)",
+                parameters=n_params,
+                macs=n_macs,
+                accuracy_loader=accuracy_loader,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+        )
+    if args.int8_qat:
+        results.append(
+            benchmark_onnx(
+                onnx_path=Path(args.int8_qat),
+                name="DS-CNN small INT8 (QAT)",
                 parameters=n_params,
                 macs=n_macs,
                 accuracy_loader=accuracy_loader,

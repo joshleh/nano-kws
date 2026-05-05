@@ -16,23 +16,34 @@ fp32 baseline — plus a live mic demo and a C++ inference reference.
 > multiplier 0.5 (62 K params, 44 M MACs). Headline numbers below are
 > on Speech Commands v0.02 test split (4,888 clips, 12 classes).
 > Static post-training quantization shrinks the model **2.6x on disk**
-> and gives a **2.1x latency speedup** on host-CPU ONNX Runtime, at the
-> cost of **~7 pp top-1**. That accuracy gap is the headline argument
-> for the next stretch deliverable on the roadmap (quantization-aware
-> training) — PTQ alone is leaving real accuracy on the table here.
+> at the cost of ~7 pp top-1 — that gap is what motivated the QAT
+> stretch deliverable. The *INT8 (QAT)* row is a **5-epoch fine-tune
+> from the same fp32 checkpoint with augmentation disabled**,
+> fake-quant active in the forward pass, then standard PTQ on the
+> resulting weights. Two effects compound there: training against the
+> INT8 grid (the textbook QAT effect) plus adapting to the cleaner
+> test distribution (Speech Commands test is mostly studio-clean and
+> the original 30-epoch run trained with heavy SpecAugment +
+> background-noise mixing). See [`MODEL_CARD.md`](MODEL_CARD.md) for
+> the per-effect attribution caveat.
 
 <!-- BEGIN_BENCHMARK_TABLE -->
 
 | Variant | Runtime | Params | MACs | Top-1 acc | Size on disk | Latency mean | Latency p50 | Latency p95 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| DS-CNN small fp32 | PyTorch (CPU) | 62.1 K | 44.13 M | 79.32% | n/a | 3.238 ms | 3.308 ms | 4.517 ms |
-| DS-CNN small fp32 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 79.32% | 242.6 KB | 0.442 ms | 0.424 ms | 0.583 ms |
-| DS-CNN small INT8 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 72.20% | 93.4 KB | 0.399 ms | 0.378 ms | 0.510 ms |
+| DS-CNN small fp32 | PyTorch (CPU) | 62.1 K | 44.13 M | 79.32% | n/a | 3.866 ms | 3.758 ms | 5.652 ms |
+| DS-CNN small fp32 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 79.32% | 242.6 KB | 0.586 ms | 0.496 ms | 0.945 ms |
+| DS-CNN small INT8 (PTQ) | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 72.20% | 93.4 KB | 0.413 ms | 0.405 ms | 0.526 ms |
+| DS-CNN small INT8 (QAT) | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 90.67% | 93.4 KB | 0.436 ms | 0.424 ms | 0.514 ms |
 
-**INT8 vs fp32 (ONNX Runtime):**
+**INT8 (PTQ) vs fp32 (ONNX Runtime):**
 - Size: 38.5% of fp32 (242.6 KB -> 93.4 KB)
-- Latency: 1.11x (0.442 ms -> 0.399 ms mean)
+- Latency: 1.42x (0.586 ms -> 0.413 ms mean)
 - Top-1 accuracy: -7.12 pp
+
+**INT8 (QAT) vs fp32 (ONNX Runtime):**
+- Top-1 accuracy: +11.35 pp
+- vs PTQ-only INT8: +18.47 pp top-1 recovered by QAT.
 
 <!-- END_BENCHMARK_TABLE -->
 
@@ -164,7 +175,8 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Quantization | Static PTQ (FX graph mode) | DS-CNN typically loses <1 pp top-1 with PTQ; QAT only justified if PTQ drop is meaningful. |
+| Quantization (PTQ) | Static PTQ via `onnxruntime.quantization`, QDQ format, per-channel weights | The format every modern edge runtime ingests cleanly; per-channel weights matter at this model scale. |
+| Quantization (QAT) | Custom STE fake-quant + per-channel weight quantization, fine-tune from fp32 ckpt for 5 epochs, freeze observers after epoch 2, then run standard PTQ on the QAT-trained weights | Vanilla PTQ on this DS-CNN drops ~7 pp top-1 — QAT closes most of that gap. Custom (vs `torch.ao.quantization.quantize_fx`) keeps the trained model structurally identical to a vanilla DS-CNN, so the existing export + quantize pipeline consumes it unchanged. |
 | Primary export | ONNX + ONNX Runtime | Native from PyTorch, broadly accepted by edge toolchains. TFLite path is fragile and out of scope. |
 | Audio frontend | Log-mel (40 bins, 30 ms / 10 ms, 16 kHz, 1-s clips) | Matches "Hello Edge" / DS-CNN baseline so results are comparable to published work. |
 | Class set | 12-class (10 keywords + `_silence_` + `_unknown_`) | Standard Speech Commands setup; sanity-checks accuracy against the literature. |
@@ -188,7 +200,7 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 
 - [x] Streamlit live mic demo (`make app`)
 - [x] C++ inference harness (ONNX Runtime C++ API) — `cpp/`
-- [ ] Quantization-aware training (only if PTQ accuracy drop is large)
+- [x] Quantization-aware training (`make qat`) — custom STE fake-quant + per-channel weight quantization, 5-epoch fine-tune from the fp32 checkpoint, then standard PTQ; see `nano_kws/qat.py` and the *INT8 (QAT)* row in the TL;DR table.
 - [ ] Hand-written depthwise-separable conv microbenchmark (NumPy → C/SIMD vs ATen)
 
 ---

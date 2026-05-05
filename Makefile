@@ -12,7 +12,7 @@ PYTHON ?= python
 PIP    ?= $(PYTHON) -m pip
 
 .PHONY: help install install-runtime lint format test cov \
-        download-data train quantize export benchmark sweep app \
+        download-data train quantize export benchmark sweep qat app \
         docker docker-run clean
 
 help:
@@ -29,6 +29,7 @@ help:
 	@echo "  export          fp32 ONNX export"
 	@echo "  benchmark       fp32 vs INT8 latency / size / accuracy table"
 	@echo "  sweep           Train tiny/small/medium and emit accuracy-vs-MACs plot"
+	@echo "  qat             Quantization-aware fine-tune from the bundled fp32 ckpt + refresh INT8/README"
 	@echo "  app             Launch Streamlit live mic demo"
 	@echo "  docker          Build the inference Docker image"
 	@echo "  docker-run      Run the benchmark inside the Docker image"
@@ -94,6 +95,14 @@ sweep:
 	    --epochs 30 \
 	    --update-readme \
 	    --publish-canonical
+
+qat:
+	$(PYTHON) -m nano_kws.qat \
+	    --fp32-checkpoint assets/ds_cnn_w0p5.pt \
+	    --output assets/ds_cnn_w0p5_qat.pt \
+	    --epochs 5 \
+	    --auto-pipeline \
+	    --update-readme
 
 app:
 	streamlit run app/streamlit_app.py

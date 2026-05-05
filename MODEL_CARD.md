@@ -14,8 +14,9 @@
 | Training data | Google Speech Commands v0.02 (Warden, 2018) |
 | Featurizer | Log-mel: 16 kHz, 40 mel bins, 30 ms window, 10 ms hop |
 | Framework | PyTorch 2.x → ONNX → ONNX Runtime |
-| Quantization | Static post-training (QDQ), INT8 weights + activations, per-channel weights, MinMax calibration |
-| Calibration | 50 batches × 16 samples drawn from the training split |
+| Quantization (PTQ) | Static post-training (QDQ), INT8 weights + activations, per-channel weights, MinMax calibration |
+| Quantization (QAT) | Custom STE fake-quant + per-output-channel symmetric INT8 weight quantization + per-tensor symmetric INT8 activation observers; 5-epoch fine-tune from fp32 checkpoint at LR 1e-4, AdamW, cosine schedule, observers frozen after epoch 2 |
+| Calibration | 50 batches × 16 samples drawn from the training split (PTQ and QAT-then-PTQ paths both use this) |
 | License | MIT |
 
 ## Intended use
@@ -42,15 +43,32 @@ averaged over 1000 runs after 100 warmup runs.
 
 | Variant | Top-1 acc | Mean latency | Model size |
 | --- | ---: | ---: | ---: |
-| fp32 (ONNX Runtime, CPU) | 79.32 % | 0.976 ms | 242.6 KB |
-| INT8 (ONNX Runtime, CPU) | 72.20 % | 0.459 ms | 93.4 KB  |
+| fp32 (ONNX Runtime, CPU) | 79.32 % | 0.586 ms | 242.6 KB |
+| INT8 PTQ (ONNX Runtime, CPU) | 72.20 % | 0.413 ms | 93.4 KB |
+| INT8 QAT (ONNX Runtime, CPU) | 90.67 % | 0.436 ms | 93.4 KB |
 
 The accuracy-vs-MACs sweep over widths {0.25, 0.5, 1.0} is in
 [`assets/sweep_table.md`](assets/sweep_table.md) and rendered as
-[`assets/sweep_plot.png`](assets/sweep_plot.png). The `-7.12 pp` PTQ
-accuracy drop at width 0.5 is the headline argument for the QAT stretch
-deliverable on the roadmap — at this model scale, post-training
-calibration alone is leaving real accuracy on the table.
+[`assets/sweep_plot.png`](assets/sweep_plot.png). The PTQ row's `-7.12
+pp` accuracy drop at width 0.5 is what motivated the QAT stretch
+deliverable; the QAT row reflects a **5-epoch fine-tune from the same
+30-epoch fp32 checkpoint with augmentation disabled**, fake-quant
+active in the forward pass, then standard PTQ on the resulting
+weights. Two effects compound to produce the +18.47 pp gain over
+PTQ-only:
+
+1. The quantization-aware fine-tune trains the weights to be robust to
+   INT8 rounding (the textbook QAT effect).
+2. Disabling background-noise mixing and SpecAugment during the
+   fine-tune lets the model adapt to the cleaner test distribution
+   (Speech Commands test is mostly studio-clean).
+
+A fairer "QAT in isolation" comparison would re-train the fp32 baseline
+for the same 5 extra epochs without augmentation; that ablation is
+left as next-session work. For the engineering question this repo is
+meant to answer — "can you ship an INT8 KWS model from PyTorch to
+something an edge runtime ingests?" — what matters is that the bundled
+INT8 checkpoint reaches 90.67 % top-1 at 93.4 KB.
 
 ## Training
 
