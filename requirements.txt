@@ -25,6 +25,13 @@ torchaudio>=2.2
 # step runs `pip install -r requirements.txt` and (because we have a
 # requirements.txt) ignores pyproject.toml entirely, so without this line
 # `import nano_kws` fails at runtime even though the source is on disk.
+#
+# `-e .` (editable, not bare `.`) is intentional: nano_kws/config.py
+# resolves REPO_ROOT via `Path(__file__).resolve().parent.parent`, so a
+# non-editable install (which copies the package into site-packages)
+# would point ASSETS_DIR at site-packages/assets/ instead of the actual
+# repo's assets/ directory and the bundled INT8 model wouldn't be found.
+#
 # Local devs should use `pip install -e .[dev]` instead, which gives the
 # editable install plus the training/lint extras.
-.
+-e .
