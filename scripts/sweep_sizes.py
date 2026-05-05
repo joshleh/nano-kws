@@ -410,8 +410,23 @@ def _train_extra_args(args: argparse.Namespace) -> list[str]:
     return extra
 
 
-def _publish_canonical(*, workdir: Path, fp32_path: Path, int8_path: Path) -> None:
-    """Copy width=0.5 sweep artefacts into assets/ as the canonical bundle."""
+def _publish_canonical(
+    *,
+    workdir: Path,
+    fp32_path: Path,
+    int8_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """Copy width=0.5 sweep artefacts into assets/ AND refresh the TL;DR table.
+
+    The file copy mirrors the previous behaviour (so the canonical
+    bundled artefacts move forward to the new run). On top of that we
+    chain :func:`nano_kws.benchmark.main` to re-render
+    ``assets/benchmark_table.md`` and re-stamp the README's
+    ``BEGIN_BENCHMARK_TABLE`` block from the freshly-copied files —
+    otherwise the TL;DR table on the README silently goes stale relative
+    to the artefacts under it.
+    """
     tag = _width_tag(CANONICAL_WIDTH)
     src_ckpt = workdir / tag / f"ds_cnn_{tag}.pt"
     src_history = src_ckpt.with_suffix(".history.json")
@@ -437,6 +452,37 @@ def _publish_canonical(*, workdir: Path, fp32_path: Path, int8_path: Path) -> No
         dst_int8.with_suffix(".label_map.json"),
     )
     logger.info("Refreshed canonical fp32/INT8 ONNX in %s", config.ASSETS_DIR)
+
+    # Chain a clean isolated benchmark run so the README TL;DR block (and
+    # assets/benchmark_table.md) move forward in lock-step with the new
+    # canonical .pt / ONNX files.
+    from nano_kws.benchmark import main as benchmark_main
+
+    benchmark_argv = [
+        "--checkpoint",
+        str(dst_ckpt),
+        "--fp32",
+        str(dst_fp32),
+        "--int8",
+        str(dst_int8),
+        "--output",
+        str(config.ASSETS_DIR / "benchmark_table.md"),
+        "--update-readme",
+        "--readme",
+        str(args.readme),
+        "--warmup",
+        str(args.warmup),
+        "--iters",
+        str(args.iters),
+        "--num-workers",
+        str(args.num_workers),
+        "--batch-size",
+        str(args.batch_size),
+    ]
+    if args.skip_accuracy:
+        benchmark_argv.append("--skip-accuracy")
+    logger.info("Refreshing canonical benchmark table via nano_kws.benchmark ...")
+    benchmark_main(benchmark_argv)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -496,24 +542,37 @@ def main(argv: list[str] | None = None) -> int:
             rows.append(row)
             if width == CANONICAL_WIDTH:
                 canonical_paths = (fp32, int8)
-            # Persist incremental progress so a crash on width N still
-            # leaves a usable table for widths < N.
-            _persist_outputs(rows, args)
+            # Cheap incremental persistence (table .md + .json only) so a
+            # crash on width N still leaves a usable table for widths < N.
+            # Plot rendering and README stamping are deferred to the end
+            # to avoid redundant work and false-positive marker warnings.
+            _write_table_files(rows, args)
         except Exception:
             logger.exception("[%s] failed; continuing with the next width.", tag)
 
-    _persist_outputs(rows, args)
+    _render_final_outputs(rows, args)
 
     if args.publish_canonical and canonical_paths is not None:
         _publish_canonical(
-            workdir=workdir, fp32_path=canonical_paths[0], int8_path=canonical_paths[1]
+            workdir=workdir,
+            fp32_path=canonical_paths[0],
+            int8_path=canonical_paths[1],
+            args=args,
         )
 
     return 0 if rows else 1
 
 
-def _persist_outputs(rows: list[SweepRow], args: argparse.Namespace) -> None:
-    """Write JSON + Markdown + plot + (optional) README stamp from current rows."""
+def _write_table_files(rows: list[SweepRow], args: argparse.Namespace) -> str:
+    """Persist sweep_table.md + sweep_table.json. Returns the rendered table.
+
+    Called once per successful width so a crash on width N still leaves
+    behind a valid table for widths < N. Crucially this does NOT touch
+    the README or render the plot — those are end-of-run-only side
+    effects (see :func:`_render_final_outputs`), which keeps the per-width
+    cost low and prevents the false-positive "markers not found" warnings
+    that fire when the readme stamp is invoked repeatedly.
+    """
     output_md = Path(args.output)
     output_md.parent.mkdir(parents=True, exist_ok=True)
     table_md = render_sweep_table(rows)
@@ -524,6 +583,12 @@ def _persist_outputs(rows: list[SweepRow], args: argparse.Namespace) -> None:
         json.dumps([asdict(r) for r in sorted(rows, key=lambda x: x.width)], indent=2),
         encoding="utf-8",
     )
+    return table_md
+
+
+def _render_final_outputs(rows: list[SweepRow], args: argparse.Namespace) -> None:
+    """Render the plot and stamp the README — call exactly once at end of run."""
+    table_md = _write_table_files(rows, args)
 
     if not args.no_plot:
         maybe_render_plot(rows, Path(args.plot))
