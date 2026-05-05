@@ -40,6 +40,22 @@ clone can run the benchmark and live demo **without training**.
 
 ---
 
+## Model size sweep
+
+Hardware-aware ML in miniature: sweep the DS-CNN width multiplier and
+read off accuracy vs parameter count vs MACs / inference. Numbers
+populated by `make sweep`; raw artefacts land in `runs/sweep/` (gitignored)
+and the rendered table mirrors [`assets/sweep_table.md`](assets/sweep_table.md).
+The accuracy-vs-MACs plot is at [`assets/sweep_plot.png`](assets/sweep_plot.png).
+
+<!-- BEGIN_SWEEP_TABLE -->
+
+_Numbers populated by `make sweep`._
+
+<!-- END_SWEEP_TABLE -->
+
+---
+
 ## Why this project
 
 Modern always-on voice interfaces — wake-word detection in earbuds, hearables,
@@ -161,7 +177,7 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 - [x] Phase 2 — DS-CNN model + training loop _(code; trained checkpoint pending)_
 - [x] Phase 3 — PTQ → INT8 ONNX export _(code; bundled INT8 asset pending)_
 - [x] Phase 4 — fp32 vs INT8 benchmark + README numbers (code; numbers populate once `make train` ships a checkpoint)
-- [ ] Phase 5 — multi-size sweep + polish
+- [x] Phase 5 — multi-size sweep + polish (code; numbers populate after the overnight run)
 
 **Stretch**
 

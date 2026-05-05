@@ -89,7 +89,11 @@ benchmark:
 	    --update-readme
 
 sweep:
-	$(PYTHON) -m scripts.sweep_sizes
+	$(PYTHON) -m scripts.sweep_sizes \
+	    --widths 0.25 0.5 1.0 \
+	    --epochs 30 \
+	    --update-readme \
+	    --publish-canonical
 
 app:
 	streamlit run app/streamlit_app.py
