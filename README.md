@@ -148,6 +148,14 @@ and it exists to make the edge-AI competency concrete and reviewable.
 
 A higher-resolution diagram lives at [`assets/arch_diagram.png`](assets/arch_diagram.png).
 
+The Streamlit demo wraps the same exported INT8 ONNX in a sliding-window
+[`StreamingClassifier`](nano_kws/streaming.py) for its **Continuous** tab
+— 1-second window, configurable hop, EMA-smoothed posteriors,
+per-keyword peak-picking with a refractory window. The model itself
+remains a single-window classifier; streaming is built on top of that
+primitive in pure Python, exactly the way wake-word detection is built
+on top of single-window NN inference in production deployments.
+
 ---
 
 ## Quickstart
@@ -217,7 +225,7 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 | Audio frontend | Log-mel (40 bins, 30 ms / 10 ms, 16 kHz, 1-s clips) | Matches "Hello Edge" / DS-CNN baseline so results are comparable to published work. |
 | Class set | 12-class (10 keywords + `_silence_` + `_unknown_`) | Standard Speech Commands setup; sanity-checks accuracy against the literature. |
 | Featurizer location | `nano_kws.data.features` — single source of truth | The most common edge-deploy bug is "training mel ≠ inference mel". One function, both paths. |
-| Inference mode | Windowed (1 s clips) | Streaming is its own engineering problem (ring buffer + posterior smoothing) and out of scope. |
+| Inference mode | Single 1-s window for the exported ONNX; Python-side sliding window + EMA + peak-pick for the demo's Continuous tab | The model contract stays a fixed-shape 1-s classifier so the export is portable to any edge runtime. Streaming is the per-deployment glue (ring buffer + posterior smoother) — done in pure Python here, would be a hand-tuned C/DSP loop on real hardware. |
 | Hand-written kernels | Pointwise + depthwise 3×3 in plain C with AVX2 + FMA intrinsics, loaded into Python via `ctypes` | The two ops are 95%+ of DS-CNN's compute. Writing them from scratch (and honestly benchmarking the gap to MKL-DNN) is the closest analogue in this repo to the hand-tuned-kernel work that vendor edge stacks ship. |
 
 ---
