@@ -13,6 +13,7 @@ PIP    ?= $(PYTHON) -m pip
 
 .PHONY: help install install-runtime lint format test cov \
         download-data train quantize export benchmark sweep qat app \
+        microbench microbench-build \
         docker docker-run clean
 
 help:
@@ -30,6 +31,8 @@ help:
 	@echo "  benchmark       fp32 vs INT8 latency / size / accuracy table"
 	@echo "  sweep           Train tiny/small/medium and emit accuracy-vs-MACs plot"
 	@echo "  qat             Quantization-aware fine-tune from the bundled fp32 ckpt + refresh INT8/README"
+	@echo "  microbench      Hand-written depthwise-separable conv kernels vs ATen (needs microbench-build)"
+	@echo "  microbench-build  CMake-build the AVX2 conv kernel shared lib in cpp/microbench/build/"
 	@echo "  app             Launch Streamlit live mic demo"
 	@echo "  docker          Build the inference Docker image"
 	@echo "  docker-run      Run the benchmark inside the Docker image"
@@ -103,6 +106,13 @@ qat:
 	    --epochs 5 \
 	    --auto-pipeline \
 	    --update-readme
+
+microbench-build:
+	cmake -S cpp/microbench -B cpp/microbench/build -DCMAKE_BUILD_TYPE=Release
+	cmake --build cpp/microbench/build --config Release -j
+
+microbench:
+	$(PYTHON) -m scripts.conv_microbench --update-readme
 
 app:
 	streamlit run app/streamlit_app.py

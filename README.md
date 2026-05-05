@@ -72,6 +72,42 @@ The accuracy-vs-MACs plot is at [`assets/sweep_plot.png`](assets/sweep_plot.png)
 
 ---
 
+## Hand-written conv kernels vs ATen
+
+The DS-CNN's compute is dominated by two ops: 1×1 pointwise conv
+(channel mixing) and 3×3 depthwise conv (per-channel spatial filter).
+[`cpp/microbench/`](cpp/microbench/) is a from-scratch C
+implementation of both — naive triple-nested-loop and AVX2 + FMA
+intrinsics — pitted against PyTorch's MKL-DNN-backed
+`torch.nn.functional.conv2d`. The point isn't to beat ATen; it's to
+*quantify* the gap. See [`cpp/microbench/README.md`](cpp/microbench/README.md)
+for methodology and "what would close the gap" notes.
+
+Build the C kernels with `make microbench-build` (needs CMake +
+MSVC/GCC/Clang with AVX2), then run `make microbench`. Without the
+build, only the NumPy + ATen rows populate.
+
+<!-- BEGIN_MICROBENCH_TABLE -->
+
+Inputs: `(C, H, W) = (56, 16, 47)`, fp32, single-thread (`torch.set_num_threads(1)`). All times wall-clock from `perf_counter_ns`.
+
+### Pointwise (1x1)
+
+| Implementation | Mean (ms) | p50 (ms) | p95 (ms) | Speedup vs C naive | Correct? |
+| --- | ---: | ---: | ---: | ---: | :---: |
+| ATen (reference) | 0.1593 | 0.1631 | 0.1955 | — | ref |
+| NumPy einsum | 0.5209 | 0.5314 | 0.6870 | — | yes (err 7.6e-06) |
+
+### Depthwise 3x3
+
+| Implementation | Mean (ms) | p50 (ms) | p95 (ms) | Speedup vs C naive | Correct? |
+| --- | ---: | ---: | ---: | ---: | :---: |
+| ATen (reference) | 0.4449 | 0.4119 | 0.6304 | — | ref |
+
+<!-- END_MICROBENCH_TABLE -->
+
+---
+
 ## Why this project
 
 Modern always-on voice interfaces — wake-word detection in earbuds, hearables,
@@ -144,7 +180,7 @@ make benchmark        # regenerates the TL;DR table
 nano_kws/        importable package: data, model, train, quantize, infer, benchmark
 scripts/         dataset fetcher, multi-size sweep
 app/             Streamlit live mic demo
-cpp/             ONNX Runtime C API inference harness (stretch)
+cpp/             ONNX Runtime C++ inference harness + hand-written AVX2 conv kernels (microbench)
 assets/          committed INT8 model + benchmark snapshot for zero-setup demo
 tests/           pytest suite (uses synthetic audio, no dataset required)
 docs/            extended results, design notes, MAC budget derivations
@@ -182,6 +218,7 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 | Class set | 12-class (10 keywords + `_silence_` + `_unknown_`) | Standard Speech Commands setup; sanity-checks accuracy against the literature. |
 | Featurizer location | `nano_kws.data.features` — single source of truth | The most common edge-deploy bug is "training mel ≠ inference mel". One function, both paths. |
 | Inference mode | Windowed (1 s clips) | Streaming is its own engineering problem (ring buffer + posterior smoothing) and out of scope. |
+| Hand-written kernels | Pointwise + depthwise 3×3 in plain C with AVX2 + FMA intrinsics, loaded into Python via `ctypes` | The two ops are 95%+ of DS-CNN's compute. Writing them from scratch (and honestly benchmarking the gap to MKL-DNN) is the closest analogue in this repo to the hand-tuned-kernel work that vendor edge stacks ship. |
 
 ---
 
@@ -201,7 +238,7 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 - [x] Streamlit live mic demo (`make app`)
 - [x] C++ inference harness (ONNX Runtime C++ API) — `cpp/`
 - [x] Quantization-aware training (`make qat`) — custom STE fake-quant + per-channel weight quantization, 5-epoch fine-tune from the fp32 checkpoint, then standard PTQ; see `nano_kws/qat.py` and the *INT8 (QAT)* row in the TL;DR table.
-- [ ] Hand-written depthwise-separable conv microbenchmark (NumPy → C/SIMD vs ATen)
+- [x] Hand-written depthwise-separable conv microbenchmark (NumPy → C scalar → C AVX2 vs ATen) — `cpp/microbench/` + `scripts/conv_microbench.py`. Run `make microbench-build && make microbench` to populate the [microbench table](#hand-written-conv-kernels-vs-aten) above.
 
 ---
 
