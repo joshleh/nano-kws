@@ -16,6 +16,9 @@ earbuds, doorbells, and smart-home hubs.
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+[![nano-kws live demo screenshot](assets/streamlit_demo.png)](https://nano-kws.streamlit.app/)
+<sub>↑ The live demo at [nano-kws.streamlit.app](https://nano-kws.streamlit.app/). Drop in a 16 kHz WAV in the **Upload WAV** tab, or upload a longer recording in **Continuous** to watch the model fire keyword detections over time.</sub>
+
 ---
 
 ## What this project is, in plain English
