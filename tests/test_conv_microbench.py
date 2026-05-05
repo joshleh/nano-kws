@@ -135,6 +135,54 @@ def test_render_markdown_includes_both_ops_and_speedup_column() -> None:
     assert "torch.set_num_threads(1)" in md
 
 
+def test_render_markdown_explains_missing_c_naive_baseline() -> None:
+    """When the C kernels aren't built, the rendered table should explain
+    why the *Speedup vs C naive* column is blank instead of just showing
+    a column full of em-dashes / "n/a"s."""
+    aten_only = [
+        Result(
+            op="pointwise",
+            impl="ATen (reference)",
+            mean_ms=0.10,
+            p50_ms=0.09,
+            p95_ms=0.15,
+            correct=None,
+            max_abs_err=None,
+        ),
+        Result(
+            op="pointwise",
+            impl="NumPy einsum",
+            mean_ms=0.50,
+            p50_ms=0.48,
+            p95_ms=0.70,
+            correct=True,
+            max_abs_err=1e-6,
+        ),
+    ]
+    md = render_markdown(aten_only, aten_only, c=8, h=4, w=5, aten_threads=1)
+    # Legend explains both jargon terms.
+    assert "Legend." in md
+    assert "Speedup vs C naive" in md
+    assert "`ref`" in md
+    # Explicit "build to populate" note is present.
+    assert "make microbench-build" in md
+    assert "n/a" in md  # Blank-baseline cell shouldn't be a bare em-dash.
+
+
+def test_render_markdown_omits_missing_baseline_note_when_c_naive_present() -> None:
+    """Sanity-check the inverse: when C naive *is* present, we don't
+    spam the build instructions."""
+    md = render_markdown(
+        _fake_results("pointwise"),
+        _fake_results("depthwise_3x3"),
+        c=8,
+        h=4,
+        w=5,
+        aten_threads=1,
+    )
+    assert "make microbench-build" not in md
+
+
 def test_render_markdown_handles_failed_correctness() -> None:
     bad = _fake_results("pointwise")
     bad[2] = Result(
