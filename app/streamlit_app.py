@@ -122,7 +122,9 @@ def _decode_uploaded_wav(uploaded: io.BytesIO, target_sr: int) -> np.ndarray:
 
 
 def _render_prediction(inferencer: KwsInferencer, waveform: np.ndarray) -> None:
-    waveform = pad_or_crop(waveform).astype(np.float32, copy=False)
+    # pad_or_crop always returns a torch.float32 tensor (see its docstring).
+    # Inferencer + featurizer accept either, but st.audio wants ndarray.
+    waveform = pad_or_crop(waveform).detach().cpu().numpy()
 
     logmel = waveform_to_logmel(waveform).numpy()  # (1, n_mels, n_frames)
     probs = inferencer.predict(waveform)

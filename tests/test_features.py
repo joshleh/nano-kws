@@ -103,3 +103,23 @@ def test_pad_or_crop_preserves_batch_dim(rng: np.random.Generator) -> None:
     batch = rng.standard_normal((3, config.CLIP_SAMPLES // 2)).astype(np.float32)
     out = pad_or_crop(batch)
     assert out.shape == (3, config.CLIP_SAMPLES)
+
+
+def test_pad_or_crop_always_returns_torch_float32_tensor(rng: np.random.Generator) -> None:
+    """Locks the return-type contract `pad_or_crop` advertises in its
+    docstring. Callers (e.g. `app/streamlit_app.py`) rely on this and
+    will break if the function ever silently switches to returning the
+    input type — see the `.astype()` regression hit during local
+    Streamlit testing."""
+    for inp in (
+        rng.standard_normal(config.CLIP_SAMPLES // 2).astype(np.float32),
+        rng.standard_normal(config.CLIP_SAMPLES).astype(np.float32),
+        rng.standard_normal(config.CLIP_SAMPLES * 2).astype(np.float32),
+        torch.from_numpy(rng.standard_normal(config.CLIP_SAMPLES).astype(np.float32)),
+        torch.from_numpy(
+            rng.standard_normal(config.CLIP_SAMPLES // 3).astype(np.float64)
+        ),
+    ):
+        out = pad_or_crop(inp)
+        assert isinstance(out, torch.Tensor)
+        assert out.dtype == torch.float32
