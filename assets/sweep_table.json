@@ -1,0 +1,38 @@
+[
+  {
+    "width": 0.25,
+    "parameters": 18492,
+    "macs": 12634272,
+    "fp32_size_bytes": 76147,
+    "int8_size_bytes": 44503,
+    "fp32_top1": 0.7356792144026186,
+    "int8_top1": 0.61620294599018,
+    "fp32_latency_ms": 0.33046339999999996,
+    "int8_latency_ms": 0.306322,
+    "int8_vs_fp32_argmax_agreement": null
+  },
+  {
+    "width": 0.5,
+    "parameters": 62060,
+    "macs": 44134720,
+    "fp32_size_bytes": 248413,
+    "int8_size_bytes": 95649,
+    "fp32_top1": 0.7931669394435352,
+    "int8_top1": 0.7219721767594108,
+    "fp32_latency_ms": 0.9764882,
+    "int8_latency_ms": 0.45873,
+    "int8_vs_fp32_argmax_agreement": null
+  },
+  {
+    "width": 1.0,
+    "parameters": 224460,
+    "macs": 163734144,
+    "fp32_size_bytes": 894008,
+    "int8_size_bytes": 273269,
+    "fp32_top1": 0.8719312602291326,
+    "int8_top1": 0.7956219312602292,
+    "fp32_latency_ms": 2.6064536,
+    "int8_latency_ms": 1.0062090000000001,
+    "int8_vs_fp32_argmax_agreement": null
+  }
+]

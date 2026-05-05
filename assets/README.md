@@ -15,12 +15,21 @@ benchmark and live demo without training. Total footprint is ~600 KB.
 
 ## Provenance of the current snapshot
 
-The committed checkpoint comes from a **1-epoch CPU smoke run** on Google
-Speech Commands v0.02, train split, with the default augmentation stack
-(SpecAugment + background noise mixing). It exists to prove that the
-end-to-end pipeline (`train -> export -> quantize -> benchmark`) works on
-a fresh clone, not as a converged model.
+The committed canonical artefacts come from a **30-epoch CPU run** of
+the Phase 5 sweep (`python -m scripts.sweep_sizes`) on Google Speech
+Commands v0.02 train split, with the default augmentation stack
+(SpecAugment + background noise mixing) and AdamW + cosine LR. The
+sweep also produced w=0.25 and w=1.0 variants — those are kept under
+`runs/sweep/` (gitignored, regenerable) and summarised by
+`assets/sweep_table.md` and `assets/sweep_plot.png`.
 
-Re-running `make train && make quantize && make benchmark` on a real
-training budget (30 epochs on a GPU is the planned target) will overwrite
-these files in place and refresh the README TL;DR table automatically.
+Headline numbers (test split, 4888 clips, 12 classes):
+
+- fp32 ONNX top-1: 79.3 %
+- INT8 ONNX top-1: 72.2 % (-7.1 pp from PTQ; flagged for QAT follow-up)
+- INT8 size: 93.4 KB (38.5 % of fp32)
+- INT8 latency: 0.46 ms mean on a single ORT CPU thread
+
+Re-running `make sweep` (or `make train && make quantize && make benchmark`)
+overwrites these files in place and the README tables auto-update via
+their BEGIN/END markers.

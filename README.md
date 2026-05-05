@@ -12,26 +12,27 @@ fp32 baseline — plus a live mic demo and a C++ inference reference.
 
 ## TL;DR
 
-> **Status:** the bundled checkpoint was trained for **1 epoch on CPU**
-> as an end-to-end pipeline smoke. Top-1 is therefore well below what
-> the architecture can deliver — the columns to read are the **deltas**:
-> INT8 keeps fp32 accuracy within ~1 pp while shrinking the model 2.6x
-> on disk and running 1.27x faster on host CPU. The numbers refresh
-> automatically the next time `make train && make quantize && make benchmark`
-> runs (e.g. on a GPU box for 30 epochs).
+> The bundled checkpoint is a **30-epoch CPU run** of DS-CNN at width
+> multiplier 0.5 (62 K params, 44 M MACs). Headline numbers below are
+> on Speech Commands v0.02 test split (4,888 clips, 12 classes).
+> Static post-training quantization shrinks the model **2.6x on disk**
+> and gives a **2.1x latency speedup** on host-CPU ONNX Runtime, at the
+> cost of **~7 pp top-1**. That accuracy gap is the headline argument
+> for the next stretch deliverable on the roadmap (quantization-aware
+> training) — PTQ alone is leaving real accuracy on the table here.
 
 <!-- BEGIN_BENCHMARK_TABLE -->
 
 | Variant | Runtime | Params | MACs | Top-1 acc | Size on disk | Latency mean | Latency p50 | Latency p95 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| DS-CNN small fp32 | PyTorch (CPU) | 62.1 K | 44.13 M | 18.86% | n/a | 5.919 ms | 4.954 ms | 12.500 ms |
-| DS-CNN small fp32 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 18.86% | 242.6 KB | 0.479 ms | 0.466 ms | 0.610 ms |
-| DS-CNN small INT8 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 17.84% | 93.4 KB | 0.378 ms | 0.379 ms | 0.513 ms |
+| DS-CNN small fp32 | PyTorch (CPU) | 62.1 K | 44.13 M | 79.32% | n/a | 3.238 ms | 3.308 ms | 4.517 ms |
+| DS-CNN small fp32 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 79.32% | 242.6 KB | 0.442 ms | 0.424 ms | 0.583 ms |
+| DS-CNN small INT8 | ONNX Runtime (CPU) | 62.1 K | 44.13 M | 72.20% | 93.4 KB | 0.399 ms | 0.378 ms | 0.510 ms |
 
 **INT8 vs fp32 (ONNX Runtime):**
 - Size: 38.5% of fp32 (242.6 KB -> 93.4 KB)
-- Latency: 1.27x (0.479 ms -> 0.378 ms mean)
-- Top-1 accuracy: -1.02 pp
+- Latency: 1.11x (0.442 ms -> 0.399 ms mean)
+- Top-1 accuracy: -7.12 pp
 
 <!-- END_BENCHMARK_TABLE -->
 
@@ -50,7 +51,11 @@ The accuracy-vs-MACs plot is at [`assets/sweep_plot.png`](assets/sweep_plot.png)
 
 <!-- BEGIN_SWEEP_TABLE -->
 
-_Numbers populated by `make sweep`._
+| Width | Params | MACs | fp32 top-1 | INT8 top-1 | Δ acc | fp32 size | INT8 size | Size ratio | fp32 latency | INT8 latency |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.25 | 18.5 K | 12.63 M | 73.57% | 61.62% | -11.95 pp | 74.4 KB | 43.5 KB | 58.4% | 0.330 ms | 0.306 ms |
+| 0.5 | 62.1 K | 44.13 M | 79.32% | 72.20% | -7.12 pp | 242.6 KB | 93.4 KB | 38.5% | 0.976 ms | 0.459 ms |
+| 1 | 224.5 K | 163.73 M | 87.19% | 79.56% | -7.63 pp | 873.1 KB | 266.9 KB | 30.6% | 2.606 ms | 1.006 ms |
 
 <!-- END_SWEEP_TABLE -->
 
@@ -174,10 +179,10 @@ See [`docs/benchmark.md`](docs/benchmark.md).
 
 - [x] Phase 0 — repo scaffold, CI, packaging
 - [x] Phase 1 — data pipeline + log-mel featurizer
-- [x] Phase 2 — DS-CNN model + training loop _(code; trained checkpoint pending)_
-- [x] Phase 3 — PTQ → INT8 ONNX export _(code; bundled INT8 asset pending)_
-- [x] Phase 4 — fp32 vs INT8 benchmark + README numbers (code; numbers populate once `make train` ships a checkpoint)
-- [x] Phase 5 — multi-size sweep + polish (code; numbers populate after the overnight run)
+- [x] Phase 2 — DS-CNN model + training loop _(30-epoch w=0.5 checkpoint bundled in `assets/`)_
+- [x] Phase 3 — PTQ → INT8 ONNX export _(bundled INT8 ONNX in `assets/`)_
+- [x] Phase 4 — fp32 vs INT8 benchmark + README TL;DR populated
+- [x] Phase 5 — multi-size sweep table + plot, real numbers from the overnight run
 
 **Stretch**
 

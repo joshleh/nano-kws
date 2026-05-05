@@ -1,8 +1,5 @@
 # Model card — `ds_cnn_small` (nano-kws)
 
-> _This card is a template. Concrete numbers are populated after Phase 4
-> (benchmark) lands and the bundled INT8 asset is committed._
-
 ## Overview
 
 | Field | Value |
@@ -12,13 +9,13 @@
 | Task | 12-class keyword spotting on 1-second 16 kHz audio clips |
 | Classes | `yes`, `no`, `up`, `down`, `left`, `right`, `on`, `off`, `stop`, `go`, `_silence_`, `_unknown_` |
 | Width multiplier (default) | 0.5 |
-| Parameters | _TBD_ |
-| MACs / inference | _TBD_ |
+| Parameters | 62,060 |
+| MACs / inference | 44,134,720 |
 | Training data | Google Speech Commands v0.02 (Warden, 2018) |
 | Featurizer | Log-mel: 16 kHz, 40 mel bins, 30 ms window, 10 ms hop |
 | Framework | PyTorch 2.x → ONNX → ONNX Runtime |
-| Quantization | Static post-training, INT8 weights and activations (FX graph mode) |
-| Calibration | _TBD_ batches from the training set |
+| Quantization | Static post-training (QDQ), INT8 weights + activations, per-channel weights, MinMax calibration |
+| Calibration | 50 batches × 16 samples drawn from the training split |
 | License | MIT |
 
 ## Intended use
@@ -43,14 +40,17 @@ Top-1 accuracy is reported on the official Speech Commands v0.02 test split,
 12-class setup. Latency is single-inference wall-clock on a host CPU,
 averaged over 1000 runs after 100 warmup runs.
 
-| Variant | Top-1 acc | Mean latency | p95 latency | Model size |
-| --- | --- | --- | --- | --- |
-| fp32 (PyTorch)         | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| fp32 (ONNX Runtime)    | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| INT8 (ONNX Runtime)    | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| Variant | Top-1 acc | Mean latency | Model size |
+| --- | ---: | ---: | ---: |
+| fp32 (ONNX Runtime, CPU) | 79.32 % | 0.976 ms | 242.6 KB |
+| INT8 (ONNX Runtime, CPU) | 72.20 % | 0.459 ms | 93.4 KB  |
 
-Per-class confusion and accuracy-vs-MACs sweep are in
-[`docs/benchmark.md`](docs/benchmark.md).
+The accuracy-vs-MACs sweep over widths {0.25, 0.5, 1.0} is in
+[`assets/sweep_table.md`](assets/sweep_table.md) and rendered as
+[`assets/sweep_plot.png`](assets/sweep_plot.png). The `-7.12 pp` PTQ
+accuracy drop at width 0.5 is the headline argument for the QAT stretch
+deliverable on the roadmap — at this model scale, post-training
+calibration alone is leaving real accuracy on the table.
 
 ## Training
 
