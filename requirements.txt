@@ -3,8 +3,20 @@
 #
 # For training, evaluation, quantization, and export, also install the dev
 # extras: `pip install -e .[dev]` (see requirements-dev.txt).
+#
+# torch / torchaudio are listed here (not just in dev extras) because the
+# inference featurizer (LogMelSpectrogram in nano_kws/data/features.py) is a
+# torchaudio.transforms.MelSpectrogram subclass — that's the "one frontend
+# for training and inference" architectural choice. The CPU-only wheels
+# keep the Streamlit Community Cloud install under the 1 GB tier limit; the
+# extra-index-url resolves to e.g. torch==2.x.y+cpu (~200 MB vs ~750 MB
+# for the CUDA-bundled PyPI wheel).
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 numpy>=1.26
 onnxruntime>=1.17
 soundfile>=0.12
 streamlit>=1.32
 sounddevice>=0.4.6
+torch>=2.2
+torchaudio>=2.2

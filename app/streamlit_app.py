@@ -171,6 +171,12 @@ def main() -> None:
     tab_mic, tab_upload = st.tabs(["Microphone", "Upload WAV"])
 
     with tab_mic:
+        st.info(
+            "Microphone capture only works locally — the hosted Streamlit "
+            "Community Cloud container has no audio input device. If you're "
+            "viewing this on the deployed demo, use the **Upload WAV** tab "
+            "instead. Run `make app` locally to use the mic path."
+        )
         if st.button(f"Record {seconds:g} second(s)", type="primary"):
             with st.spinner("Recording ..."):
                 waveform = _record_from_mic(seconds, config.SAMPLE_RATE)
