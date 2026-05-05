@@ -350,6 +350,25 @@ def main(argv: list[str] | None = None) -> None:
         ).to(device)
 
     # ----- Optimizer + schedule -----
+    # ─── Interview note: training-loop choices ─────────────────────────────
+    # AdamW (decoupled weight decay) is the safe default for small CNNs at
+    # this scale — converges in 30 epochs without learning-rate-finder
+    # gymnastics, and the decoupled L2 means we can tune weight_decay
+    # independently of the LR. SGD+momentum reaches the same accuracy with
+    # more LR tuning and a longer schedule; the time savings of AdamW
+    # outweigh the (small) generalization edge of SGD at this scale.
+    #
+    # Cosine annealing over the full epoch budget (no restarts) is the
+    # other safe default — anneals smoothly to ~zero, doesn't need
+    # milestones, and pairs well with AdamW. Step or warmup-cosine would
+    # also work; cosine is the simplest thing that doesn't underperform.
+    #
+    # CrossEntropyLoss handles the log-softmax internally (so the model
+    # emits raw logits — see the matching note in nano_kws.infer about
+    # softmax in Python). Class imbalance: the SpeechCommandsKWS dataset
+    # subsamples `_unknown_` to keep the 12-class distribution roughly
+    # balanced, so we don't need class weights here.
+    # ───────────────────────────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     criterion = nn.CrossEntropyLoss()

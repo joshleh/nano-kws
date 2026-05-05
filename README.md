@@ -1,16 +1,75 @@
 # nano-kws
 
-**Edge-deployable keyword spotter.** A small DS-CNN trained on Google Speech
-Commands, quantized to INT8, exported to ONNX, and benchmarked against its
-fp32 baseline — plus a live mic demo and a C++ inference reference.
+**A tiny "Hey Alexa"-style keyword spotter that runs in under 100 KB.**
 
+Trained in PyTorch, compressed to 8-bit integer math, exported for any
+edge device — the same engineering pipeline that ships voice models to
+earbuds, doorbells, and smart-home hubs.
+
+[**Try the live demo →**](https://nano-kws.streamlit.app/) &nbsp;·&nbsp;
+[Skills demonstrated](#skills-demonstrated) &nbsp;·&nbsp;
+[Quickstart](#quickstart) &nbsp;·&nbsp;
+[Results](#results)
+
+[![Live demo](https://img.shields.io/badge/live%20demo-nano--kws.streamlit.app-FF4B4B?logo=streamlit&logoColor=white)](https://nano-kws.streamlit.app/)
 [![CI](https://github.com/joshualee/nano-kws/actions/workflows/ci.yml/badge.svg)](https://github.com/joshualee/nano-kws/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## TL;DR
+## What this project is, in plain English
+
+Modern voice interfaces — your earbuds saying "Hey Alexa", a doorbell
+listening for "ring", a hearing aid filtering background noise — run a
+neural network on a tiny chip with about as much memory as a 1990s
+floppy disk and a power budget smaller than an LED's. Getting a model
+onto that hardware is its own engineering discipline: you have to train
+something small enough to fit, compress it to integer math without
+losing accuracy, and benchmark every step honestly.
+
+**`nano-kws` is a focused walk through that whole pipeline** for a
+10-keyword recognizer (`yes / no / up / down / left / right / on / off /
+stop / go`). The final model is **under 100 KB on disk** and classifies
+a 1-second audio clip in **under half a millisecond on a single CPU
+thread**. You can try it yourself in 30 seconds at the
+[live demo](https://nano-kws.streamlit.app/) — drop in a WAV of yourself
+saying any of the keywords and watch the model decide.
+
+The repo is intentionally small and readable: one model family, one
+dataset, one quantization path, real numbers in every table, every
+design decision explained in the design-decisions table below.
+
+## Skills demonstrated
+
+A scan-friendly index of what's in this repo — each item maps to
+specific code, results, and design decisions you can dig into:
+
+| Area | What's here |
+| --- | --- |
+| **Audio ML** | Log-mel spectrogram frontend matched bit-for-bit between training and inference ([`nano_kws/data/features.py`](nano_kws/data/features.py)); 12-class Speech Commands setup. |
+| **Model design** | DS-CNN (depthwise-separable convs) with a width multiplier so the same architecture sweeps from 18 K to 224 K parameters ([`nano_kws/model.py`](nano_kws/model.py)). |
+| **Hardware-aware tradeoffs** | Multi-size sweep reporting accuracy vs parameter count vs MACs vs latency ([sweep table](#model-size-sweep)). |
+| **Quantization (PTQ)** | Static post-training quantization to INT8 via ONNX Runtime — 2.6× smaller, faster, with measured accuracy delta ([benchmark table](#tldr-technical)). |
+| **Quantization (QAT)** | Custom straight-through-estimator fake-quant + per-channel weight quantization, 5-epoch fine-tune; recovers the PTQ accuracy gap ([`nano_kws/qat.py`](nano_kws/qat.py)). |
+| **Edge inference** | ONNX Runtime in Python *and* C++ (`cpp/infer.cpp`); same model, same pre/post-processing, byte-identical outputs. |
+| **Streaming inference** | Sliding-window classifier with EMA-smoothed posteriors and per-keyword peak-picking ([`nano_kws/streaming.py`](nano_kws/streaming.py)) — the building block of every wake-word detector. |
+| **Hand-written kernels** | Depthwise + pointwise conv in plain C with AVX2 + FMA intrinsics, benchmarked against PyTorch's MKL-DNN ([`cpp/microbench/`](cpp/microbench/)). |
+| **Software engineering** | `pyproject.toml`, `ruff`, `pre-commit`, `pytest` (131 tests), GitHub Actions CI on Python 3.11 + 3.12, `Makefile` with one-command targets. |
+| **Deployment** | Streamlit web demo deployed on Streamlit Community Cloud with the bundled INT8 model — zero training required for a fresh clone. |
+
+> **Why this project exists:** I built `nano-kws` while preparing for a
+> Machine Learning Engineering Intern interview at **Syntiant**, who
+> design ultra-low-power Neural Decision Processors for on-device voice
+> AI. The repo is structured to mirror their actual work: train in
+> PyTorch, quantize to INT8, deploy to constrained hardware, measure
+> everything. It's a 1-2 week portfolio sprint, not a research project
+> — scope was kept ruthlessly narrow to make the engineering bar
+> visible.
+
+---
+
+## TL;DR (technical)
 
 > The bundled checkpoint is a **30-epoch CPU run** of DS-CNN at width
 > multiplier 0.5 (62 K params, 44 M MACs). Headline numbers below are
@@ -108,25 +167,29 @@ Inputs: `(C, H, W) = (56, 16, 47)`, fp32, single-thread (`torch.set_num_threads(
 
 ---
 
-## Why this project
+## The edge-AI pipeline
 
-Modern always-on voice interfaces — wake-word detection in earbuds, hearables,
-and smart speakers — run on **ultra-low-power neural decision processors**
-that have on the order of **~100 KB of weight memory** and a power budget
-under **1 mW**. Getting a Python-trained model onto that hardware is a
-specific engineering pipeline:
+The deployment pipeline this repo walks through, step by step:
 
-1. Train a small architecture in PyTorch (DS-CNN, TC-ResNet, BC-ResNet, …).
-2. Match the on-device audio frontend (log-mel) **bit-for-bit** during training.
-3. Post-training quantize to INT8 and verify the accuracy delta is acceptable.
-4. Export to a portable inference format (ONNX / TFLite) and benchmark
-   against the fp32 baseline on the same hardware.
-5. Deploy through a vendor toolchain to the target NPU.
+1. **Train** a small architecture in PyTorch (DS-CNN here; TC-ResNet,
+   BC-ResNet, MobileNet are all peers in this regime).
+2. **Match the audio frontend bit-for-bit** between training and
+   inference. The most common edge-deploy bug is "training mel ≠
+   inference mel" — one off-by-one in window size and accuracy
+   collapses on the device.
+3. **Quantize to INT8** and verify the accuracy delta is acceptable.
+   Two paths shipped here: PTQ (post-training, fast, easy) and QAT
+   (quantization-aware fine-tune, slower, recovers accuracy).
+4. **Export to a portable inference format** (ONNX) and benchmark
+   against the fp32 baseline on the same hardware. Latency, peak
+   memory, model file size — all measured, all in the README.
+5. **Deploy through a vendor toolchain** to the target NPU. Here the
+   `cpp/infer.cpp` harness stands in for that step (ONNX Runtime C++
+   API instead of a vendor SDK).
 
-`nano-kws` is a focused walk through steps 1–4 of that pipeline, plus a C++
-inference harness as a stand-in for step 5. It is intentionally narrow —
-**one model family, one dataset, one quantization path, real numbers** —
-and it exists to make the edge-AI competency concrete and reviewable.
+The bundled artefacts in [`assets/`](assets/) (~400 KB total) let a
+fresh clone reproduce every number in the README without training
+anything.
 
 ---
 

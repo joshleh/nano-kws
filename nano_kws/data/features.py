@@ -33,6 +33,35 @@ from nano_kws import config
 LOG_EPS: float = 1e-6
 """Floor added before ``log`` to keep silence frames finite."""
 
+# ─── Interview note: why log-mel and why these specific parameters? ─────────
+# Audio classification doesn't feed raw 16 kHz PCM into a CNN — that would
+# be a fully-connected pile of weights against 16 000-sample vectors. Every
+# production speech model goes through a 2D time-frequency representation
+# first. Three reasons to pick log-mel specifically:
+#   1. The Hello Edge / DS-CNN baseline uses it, so our numbers are
+#      comparable to published work.
+#   2. The mel scale is perceptually motivated — bins are linearly spaced
+#      below ~1 kHz and log-spaced above, matching how human ears resolve
+#      pitch. Useful inductive bias for speech.
+#   3. log() compresses the dynamic range so quiet phonemes aren't drowned
+#      out by loud ones; it also turns multiplicative noise (gain changes,
+#      mic distance) into additive noise that BN can normalize away.
+# Specific knobs:
+#   * 30 ms window / 10 ms hop: standard speech-recognition framing
+#     (~40 ms phoneme duration, ~3 frames per phoneme).
+#   * 40 mel bins: enough to resolve formants, small enough to keep the
+#     model tiny. KWS literature uses 40-64; we picked the small end.
+#   * n_fft=512 (>= win_length=480): power-of-two speeds up the FFT and
+#     zero-pads to the next bin without truncating the window.
+#   * power=2.0: power spectrogram (vs amplitude). Standard in mel
+#     pipelines and what torchaudio defaults to.
+#   * center=False: the leading-edge convention. center=True (the librosa
+#     default) zero-pads the input so frames are centered on every hop
+#     position, which is fine for offline analysis but doesn't match what
+#     a real-time streaming featurizer would produce. We keep parity with
+#     the streaming case so a future on-device frontend would be drop-in.
+# ────────────────────────────────────────────────────────────────────────────
+
 
 class LogMelSpectrogram(nn.Module):
     """Compute log-mel spectrograms with the project's audio-frontend config.

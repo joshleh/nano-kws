@@ -37,6 +37,20 @@ DEFAULT_N_BLOCKS: int = 4
 INITIAL_KERNEL: tuple[int, int] = (10, 4)
 INITIAL_STRIDE: tuple[int, int] = (2, 2)
 
+# ─── Interview note: why DS-CNN over peer architectures? ────────────────────
+# DS-CNN is the canonical "edge KWS baseline" in the literature (Zhang et al.
+# "Hello Edge", 2017) and a fair midpoint among the alternatives:
+#   * MobileNet — same depthwise-separable trick but designed for ImageNet
+#     scale; overkill at our 12-class budget.
+#   * TC-ResNet — temporal-only convs, slightly better acc/MAC at the cost
+#     of a more bespoke architecture.
+#   * BC-ResNet — broadcasting frequency/time blocks; SOTA in 2021 KWS work
+#     but harder to explain quickly and overkill for a portfolio piece.
+# DS-CNN wins on (a) being a well-known, citable baseline, (b) plain Conv2d
+# blocks that quantize and SIMD-vectorize cleanly, and (c) a single width
+# multiplier knob that gives the whole accuracy-vs-compute curve.
+# ────────────────────────────────────────────────────────────────────────────
+
 
 def _scaled_channels(base: int, multiplier: float, divisor: int = 8) -> int:
     """Scale ``base`` by ``multiplier`` and round to a multiple of ``divisor``.
@@ -51,6 +65,21 @@ def _scaled_channels(base: int, multiplier: float, divisor: int = 8) -> int:
 
 class DepthwiseSeparableBlock(nn.Module):
     """3x3 depthwise + 1x1 pointwise, each followed by BN and ReLU."""
+
+    # ─── Interview note: depthwise-separable vs standard conv ──────────────
+    # A standard 3x3 conv with C in/out channels does 3*3*C*C MACs per
+    # output spatial position. Depthwise-separable splits that into:
+    #   * depthwise:  3*3*C   MACs  (one filter per channel, no mixing)
+    #   * pointwise:  1*1*C*C MACs  (channel mixing only)
+    # Total: (9 + C) * C, vs 9*C*C for standard. At C=56 that's a ~8.6x
+    # reduction in compute. The (small) accuracy cost is well-studied and
+    # near-zero at our scale. The trade-off in deployment: depthwise has
+    # very low arithmetic intensity (one FMA per load), so it's typically
+    # memory-bound — the AVX2 microbench in cpp/microbench/ shows this in
+    # action. Pointwise dominates the FLOP count and is what wins from
+    # SIMD/GEMM kernels. bias=False because every conv is followed by BN,
+    # which absorbs any constant offset.
+    # ───────────────────────────────────────────────────────────────────────
 
     def __init__(self, channels: int) -> None:
         super().__init__()
@@ -170,6 +199,19 @@ def build_ds_cnn(
 def count_parameters(model: nn.Module) -> int:
     """Return the number of trainable parameters in ``model``."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+# ─── Interview note: why count MACs ourselves instead of using ptflops/fvcore? ──
+# Two reasons. First, removing a third-party MAC counter is one less dependency
+# that could go stale or report something subtly different from the next one.
+# Second, writing the hook is a 20-line exercise that directly forces you to
+# think about the per-layer formula — it's exactly the back-of-the-envelope
+# arithmetic an interviewer is likely to ask about. ("How many MACs does a 3x3
+# depthwise conv on a 16x47 feature map with 56 channels do?" → 3*3 * 1 * 56 *
+# 16 * 47 = 379,008.) The hook handles depthwise via `groups`, BN/ReLU/pool
+# are intentionally not counted (negligible compared to convs/linears, and the
+# reporting convention for edge-AI MAC budgets is conv+linear only).
+# ───────────────────────────────────────────────────────────────────────────────
 
 
 def count_macs(model: nn.Module, input_shape: tuple[int, ...] = config.INPUT_SHAPE) -> int:

@@ -127,6 +127,32 @@ def _percentile(arr: np.ndarray, q: float) -> float:
     return float(np.percentile(arr, q))
 
 
+# ─── Interview note: the latency-measurement methodology in one place ──────
+# Easy to do badly. Three things this function gets right that a naive
+# `time.time()` loop wouldn't:
+#   1. Warmup runs that are NOT timed. The first few runs pay JIT/cache
+#      misses, ORT graph compilation, allocator warmup, etc. — including
+#      them inflates the mean and skews the percentiles.
+#   2. perf_counter_ns(), not time.time() / time.perf_counter(). The former
+#      has nanosecond resolution and is monotonic; the latter is system-
+#      time-based and can jitter under NTP adjustments.
+#   3. Reporting mean + p50 + p95 (not just mean). Latency distributions in
+#      production are usually skewed right (occasional context switches,
+#      GC pauses). Mean alone hides tail behaviour; p50 says "what does
+#      a typical request feel like"; p95 says "what does a slow request
+#      feel like". Edge-AI deployments often spec on p99 or p99.9 for
+#      hard-real-time wake-word use cases.
+# Caveats worth flagging in the interview:
+#   * This measures host-CPU latency on a Skyworks laptop, NOT NDP latency.
+#     Hardware vendors quote latency on their silicon at a specified clock;
+#     ours is a loose proxy. The hardware-independent metrics (parameters,
+#     MACs) are the headline; latency is a sanity check on top of those.
+#   * Inputs are pre-staged outside the timed region so we measure model +
+#     runtime, not numpy memcpy.
+#   * Single-thread because the rest of the report is CPU-EP single-thread.
+# ───────────────────────────────────────────────────────────────────────────
+
+
 def _measure_latency(infer_once, *, warmup: int, iters: int) -> tuple[float, float, float]:
     """Run ``infer_once`` ``warmup`` + ``iters`` times; return (mean, p50, p95) ms.
 

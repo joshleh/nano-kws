@@ -155,6 +155,36 @@ def real_calibration_batches(
 # ---------------------------------------------------------------------------
 
 
+# ─── Interview note: PTQ design choices in this function ──────────────────
+# Three sub-decisions an interviewer is likely to probe:
+#
+# 1. **QDQ format** (vs QOperator). QDQ inserts QuantizeLinear /
+#    DequantizeLinear pairs around the original fp32 ops; the runtime is
+#    free to fuse them into integer kernels or not. QOperator emits ops
+#    that are already integer (QLinearConv etc.). QDQ is preferred because
+#    it's runtime-portable — every modern edge ingestion path (TensorRT,
+#    OpenVINO, TFLite via converters, vendor compilers) accepts QDQ; not
+#    all accept QOperator. It also leaves the float graph visible for
+#    debugging.
+#
+# 2. **Per-channel weights, per-tensor activations**. Conv weights have
+#    one scale per output channel — kernels in a layer often have very
+#    different magnitudes, and a single scale would clip the small ones
+#    and waste range on the big ones. Activations get one scale per
+#    tensor because per-channel activation quant requires per-channel
+#    runtime support that not every accelerator has.
+#
+# 3. **MinMax calibration** (vs Entropy / Percentile). MinMax is the
+#    safest default — it sets the activation range to the observed
+#    [min, max] of the calibration batch, which never clips real values.
+#    Entropy minimizes KL between fp32 and INT8 histograms (better for
+#    long-tailed distributions); Percentile clips the tail. For DS-CNN
+#    with ReLU activations and bounded inputs (log-mel is mean-centered
+#    and bounded by audio dynamic range), MinMax is fine and gives the
+#    most reproducible numbers.
+# ───────────────────────────────────────────────────────────────────────────
+
+
 def quantize_onnx(
     *,
     fp32_path: str | Path,

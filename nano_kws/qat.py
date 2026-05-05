@@ -109,6 +109,21 @@ logger = logging.getLogger("nano_kws.qat")
 QMIN_INT8: int = -128
 QMAX_INT8: int = 127
 
+# ─── Interview note: why a custom STE instead of torch.ao.quantization? ──────
+# Two reasons. (1) torch.ao.quantization.quantize_fx traces the model into a
+# GraphModule and rewrites parameter names, which breaks our existing fp32
+# ONNX export pipeline — we'd need a separate export path just for QAT
+# checkpoints. (2) A 30-line custom STE is much more transparent to walk
+# through in an interview: forward is `round((x/scale) + zero_point) * scale -
+# zero_point*scale` clamped to the INT8 grid, backward is identity. There's
+# no magic. The architecture stays a vanilla DSCNN, the QAT wrappers are
+# stripped after training, and the resulting .pt is byte-compatible with the
+# original PTQ pipeline. A production team would absolutely use the official
+# AO toolkit (or even Brevitas) — that's the right scaling answer — but for
+# a portfolio piece "I implemented STE myself and can explain every line"
+# is a stronger signal than "I called .prepare_qat_fx and trusted the magic".
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 class _FakeQuantSTE(torch.autograd.Function):
     """Symmetric INT8 fake-quant with a straight-through estimator backward.
@@ -201,6 +216,25 @@ def per_channel_weight_fake_quant(weight: torch.Tensor) -> torch.Tensor:
     abs_max = weight.detach().abs().amax(dim=dims, keepdim=True)
     scale = (abs_max / float(QMAX_INT8)).clamp(min=1e-9)
     return fake_quantize_symmetric(weight, scale)
+
+
+# ─── Interview note: why this choice cost us 5+ pp in the first run ─────────
+# The initial QAT implementation used a *symmetric* activation observer, and
+# it actually regressed accuracy by ~5 pp vs PTQ. The fix that recovered
+# the gain was switching to asymmetric here (matching ORT's deployment
+# scheme), plus three other small alignment changes:
+#   * Disable augmentation during fine-tune (training distribution should
+#     match the calibration distribution PTQ sees).
+#   * Lower the LR to 5e-5 (we're tuning around the existing fp32 weights,
+#     not training from scratch).
+#   * Save the *last* epoch's checkpoint, not the best-val one — early best
+#     val happens before observers freeze, so the weights haven't yet
+#     adapted to stable scales.
+# The lesson worth rehearsing: QAT only helps when training-time numerics
+# match deployment-time numerics. A subtly different fake-quant scheme is
+# worse than no QAT at all because the model learns to compensate for
+# noise it'll never see in production.
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 class ActivationObserver(nn.Module):

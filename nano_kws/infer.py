@@ -39,6 +39,39 @@ logger = logging.getLogger("nano_kws.infer")
 DEFAULT_INPUT_NAME: str = "input"
 DEFAULT_OUTPUT_NAME: str = "logits"
 
+# ─── Interview note: ONNX Runtime as the inference backend ─────────────────
+# Three reasons, in order of importance:
+#   1. Portability. The same ONNX file that the Python demo loads is what
+#      the C++ harness in cpp/infer.cpp consumes (also via ORT) and what a
+#      vendor toolchain would ingest as the source format for a hardware
+#      compile. Standardizing on ONNX means we don't have to reason about
+#      "which serialization does which deployment target like" — there's
+#      one model file, one set of input/output names, one tensor layout.
+#   2. INT8 support. ORT's CPU EP has solid QDQ kernels and is what
+#      onnxruntime.quantization quantizes *for* — so the calibration we
+#      ran in nano_kws.quantize is exactly tuned for this runtime.
+#   3. CPUExecutionProvider only, deliberately. We force CPU EP so the
+#      benchmark numbers and the demo behavior are identical across
+#      machines (no "fast on my GPU box, slow in CI"). A real edge
+#      deployment would swap the EP for a vendor-specific one (CoreML,
+#      QNN, etc.) — this code path doesn't change.
+# ───────────────────────────────────────────────────────────────────────────
+
+# ─── Interview note: why softmax in Python rather than baked into the graph? ──
+# The exported model emits raw logits, not probabilities. Reasons:
+#   * Numerical stability — the subtract-max trick below is easier to
+#     reason about and audit in 4 lines of NumPy than buried inside the
+#     graph. Quantization of the softmax op is finicky (exponentials over
+#     wide ranges) and we'd rather keep it out of the INT8 path.
+#   * A consumer that wants top-k or just argmax doesn't need to compute
+#     the exponentials at all; raw logits give them that flexibility.
+#   * The C++ harness and the Streamlit demo can share this exact softmax
+#     implementation by porting these 4 lines, which is what infer.cpp does.
+# Trade-off: the model isn't "self-contained" — every consumer must apply
+# softmax. For a 12-class classifier with one consumer pattern (top-1) that's
+# trivial; for larger output distributions you might bake it in.
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 def _softmax(logits: np.ndarray) -> np.ndarray:
     """Numerically stable softmax over the last axis."""

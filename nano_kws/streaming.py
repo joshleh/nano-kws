@@ -40,6 +40,26 @@ from nano_kws.infer import KwsInferencer
 logger = logging.getLogger("nano_kws.streaming")
 
 
+# ─── Interview note: this whole module is the "streaming wrapper" answer ────
+# A common interview probe: "Your model takes a fixed 1-second clip. How
+# would you build a wake-word detector on top of it?" The answer is exactly
+# the three-stage pipeline this module implements:
+#   1. Slide the fixed-window classifier across the audio at a small hop
+#      (100-300 ms is typical; smaller = better localization but more compute).
+#   2. Smooth the per-window posteriors over time. Without smoothing you get
+#      jittery single-window detections; with too much smoothing you delay
+#      the trigger. EMA is the simplest tunable smoother — production teams
+#      use anything from a moving median to a learned RNN smoother.
+#   3. Peak-pick: trigger when the smoothed posterior crosses a threshold
+#      AND is a local maximum AND is outside the refractory window of the
+#      last trigger. The refractory window prevents a single keyword from
+#      firing N adjacent windows.
+# The hardware version on a real NDP looks the same logically but runs on
+# a circular ring buffer of audio + an incrementally-updated mel
+# spectrogram (no per-window recomputation), with the smoothing + peak
+# logic in a tiny C state machine. This module is the software reference.
+# ────────────────────────────────────────────────────────────────────────────
+
 DEFAULT_HOP_MS: float = 200.0
 """Stride between adjacent windows. 200 ms is a common default in the KWS
 literature — small enough to localize keyword onsets to ~5 frames, large

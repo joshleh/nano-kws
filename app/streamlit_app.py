@@ -270,15 +270,95 @@ def _render_sidebar() -> tuple[str, float]:
 # ---------------------------------------------------------------------------
 
 
+def _render_about_section() -> None:
+    """Recruiter / non-technical-friendly project explainer.
+
+    Shown expanded by default for first-time visitors so the demo
+    has context. Visitors who already know what they're looking at
+    can collapse it.
+    """
+    with st.expander("**About this project** (click to expand / collapse)", expanded=True):
+        st.markdown(
+            """
+**What is this?** A live demo of a tiny keyword recognition model
+that listens for one of 10 words: *yes, no, up, down, left, right,
+on, off, stop, go*. It's the same kind of model that runs inside
+smart speakers, earbuds, and doorbells when they listen for a
+wake word like "Hey Alexa".
+
+**Why is it interesting?** The whole model fits in **under 100 KB**
+of memory — about the size of a small image — and decides what you
+said in **under half a millisecond** on a regular laptop CPU. That
+tiny size and speed is what makes it deployable on the kind of
+ultra-low-power chip you'd find in a battery-powered device.
+
+**How to try it:**
+
+1. Use the **Upload WAV** tab on the right and drop in a short audio
+   clip of yourself (or anyone) saying one of the 10 keywords.
+2. Or use the **Continuous** tab to upload a longer recording and
+   watch the model fire detections over time.
+3. The **Microphone** tab works only when you run the demo locally on
+   your own computer — the cloud server here has no microphone
+   attached.
+
+**Want the technical story?** Source code, design decisions, accuracy
+benchmarks, and the model card all live at the
+[GitHub repo](https://github.com/joshleh/nano-kws).
+            """.strip()
+        )
+
+
+def _render_glossary() -> None:
+    """Quick technical-term explainer for non-ML viewers."""
+    with st.expander("Glossary — what the technical words mean", expanded=False):
+        st.markdown(
+            """
+- **Keyword spotter (KWS)** — A neural network that listens to a short
+  audio clip and decides whether it contains one of a fixed list of
+  keywords. Wake-word detectors (e.g. "Hey Siri") are KWS models.
+- **DS-CNN** — Depthwise-Separable Convolutional Neural Network. A
+  family of small, efficient image/audio models popular for
+  on-device deployment. Roughly 8-9x cheaper than a regular CNN at
+  the same kernel size.
+- **INT8** — 8-bit integer arithmetic. Standard floating-point models
+  use 32-bit numbers (FP32). Squeezing them down to 8-bit integers
+  cuts model size by ~4x and speeds inference up significantly, at
+  the cost of a small accuracy drop. The art is in keeping that
+  drop small.
+- **Log-mel spectrogram** — How we turn raw audio into something a
+  neural network can chew on. The waveform is sliced into 30 ms
+  windows, each window is converted to a frequency representation,
+  and that's compressed onto 40 perceptually-spaced "mel" bins. The
+  result is a 40 x 97 image — and the model is essentially an image
+  classifier on those.
+- **ONNX Runtime** — The open-source inference engine we use to
+  actually run the trained model. Once the model is exported to ONNX,
+  the same file runs in Python, C++, mobile, browser, and most
+  embedded toolchains.
+- **Quantization** (PTQ / QAT) — The process of converting a model
+  from FP32 to INT8. PTQ (post-training) does it after training, in
+  a few seconds. QAT (quantization-aware) bakes quantization noise
+  into the training loop so the model learns to be robust to it —
+  more accurate, more setup work.
+- **MAC** — Multiply-Accumulate. The basic arithmetic operation in a
+  neural network: `c += a * b`. People count MACs the way you'd
+  count miles per gallon — fewer MACs per inference = less power
+  drawn on the chip.
+            """.strip()
+        )
+
+
 def main() -> None:
     st.set_page_config(page_title="nano-kws — live demo", page_icon=None, layout="wide")
     st.title("nano-kws — INT8 keyword spotter")
-    st.write(
-        "Live demo of the bundled DS-CNN INT8 model. "
-        "Speak one of the 10 keywords (`yes / no / up / down / left / right / on / off / stop / go`) "
-        "or upload a 16 kHz mono WAV. The model is < 100 KB on disk and inference runs on a "
-        "single CPU thread via ONNX Runtime."
+    st.caption(
+        "A < 100 KB neural network that listens for 10 keywords. "
+        "[Source on GitHub](https://github.com/joshleh/nano-kws)."
     )
+
+    _render_about_section()
+    _render_glossary()
 
     model_path, seconds = _render_sidebar()
     hop_ms, ema_alpha, detection_threshold, detection_refractory_s = _render_continuous_controls()

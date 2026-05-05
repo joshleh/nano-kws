@@ -43,6 +43,24 @@ logger = logging.getLogger(__name__)
 _BACKGROUND_FOLDER: str = "_background_noise_"
 _KEYWORD_SET: frozenset[str] = frozenset(config.KEYWORDS)
 
+# ─── Interview note: the 12-class Speech Commands setup ─────────────────────
+# Speech Commands v0.02 ships with 35 word labels. The standard KWS benchmark
+# (Hello Edge, every paper since) collapses that to 12 classes:
+#   * 10 keywords (the Speech Commands "core" set: yes/no/up/down/left/right/
+#     on/off/stop/go).
+#   * `_unknown_` — every other word, randomly subsampled. Without
+#     subsampling, "unknown" would be ~25x larger than any single keyword and
+#     dominate the cross-entropy loss → model collapses to predicting unknown.
+#   * `_silence_` — synthesized by sampling 1-second windows from the
+#     dataset's bundled `_background_noise_` clips at low gain. The dataset
+#     ships these specifically so models learn "no keyword present" as a
+#     real class, not just "low energy".
+# This 12-class framing is what the model card, every benchmark, and every
+# published comparison number assumes. Deviating from it (e.g. 20 classes,
+# different unknown ratio) makes the headline accuracy incomparable to
+# literature.
+# ────────────────────────────────────────────────────────────────────────────
+
 
 def _classify_label(label: str) -> int:
     """Map a raw Speech Commands label to a 12-class label index."""

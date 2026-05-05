@@ -53,8 +53,28 @@ void conv_pointwise_naive(
  * input channel per chunk of 8 outputs.
  *
  * Asymptotic FMA rate ceiling: 1 FMA / cycle * 8 lanes = 8 FLOPs / cycle.
- * Real-world we'll see 2-4× ATen's MKL-DNN kernel because we're missing
+ * Real-world we'll see 2-4x ATen's MKL-DNN kernel because we're missing
  * register tiling, blocking for L1, and prefetching.
+ *
+ * --- Interview note: what would close the gap to ATen ---------------------
+ * Pointwise conv is structurally a (C_out, H*W) x (C_in) matmul. The
+ * production move is to *call it as one*: reshape and dispatch to a tuned
+ * GEMM (cblas_sgemm or a hand-rolled register-blocked microkernel), then
+ * a single output write. That gets us:
+ *   1. Register tiling — accumulate ~6x16 output tiles in registers so each
+ *      input/weight load is reused by many FMAs (raises arithmetic
+ *      intensity, hides L1 latency).
+ *   2. L1/L2 blocking — pick block sizes so the working set of each
+ *      microkernel call fits in L1 / L2.
+ *   3. AVX-512 — same FMA structure, double the lane width, ~2x throughput
+ *      on Skylake-X+ / Ice Lake.
+ *   4. Prefetching — `_mm_prefetch` the next block of input rows while
+ *      computing the current block.
+ * Combined, these typically close 80-90% of the gap to MKL-DNN. For
+ * production on a real edge target you'd write the microkernel by hand
+ * (or use ARM's CMSIS-NN / vendor library) targeting that chip's vector
+ * ISA — same structure, different intrinsics.
+ * --------------------------------------------------------------------------
  */
 void conv_pointwise_avx2(
     const float *input,
