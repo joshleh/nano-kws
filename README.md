@@ -12,7 +12,7 @@ earbuds, doorbells, and smart-home hubs.
 [Results](#results)
 
 [![Live demo](https://img.shields.io/badge/live%20demo-nano--kws.streamlit.app-FF4B4B?logo=streamlit&logoColor=white)](https://nano-kws.streamlit.app/)
-[![CI](https://github.com/joshualee/nano-kws/actions/workflows/ci.yml/badge.svg)](https://github.com/joshualee/nano-kws/actions/workflows/ci.yml)
+[![CI](https://github.com/joshleh/nano-kws/actions/workflows/ci.yml/badge.svg)](https://github.com/joshleh/nano-kws/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -51,7 +51,7 @@ specific code, results, and design decisions you can dig into:
 | Area | What's here |
 | --- | --- |
 | **Audio ML** | Log-mel spectrogram frontend matched bit-for-bit between training and inference ([`nano_kws/data/features.py`](nano_kws/data/features.py)); 12-class Speech Commands setup. |
-| **Model design** | DS-CNN (depthwise-separable convs) with a width multiplier so the same architecture sweeps from 18 K to 224 K parameters ([`nano_kws/model.py`](nano_kws/model.py)). |
+| **Model design** | DS-CNN (depthwise-separable convs) with a width multiplier so the same architecture sweeps from 18 K to 224 K parameters ([`nano_kws/models/ds_cnn.py`](nano_kws/models/ds_cnn.py)). |
 | **Hardware-aware tradeoffs** | Multi-size sweep reporting accuracy vs parameter count vs MACs vs latency ([sweep table](#model-size-sweep)). |
 | **Quantization (PTQ)** | Static post-training quantization to INT8 via ONNX Runtime — 2.6× smaller, faster, with measured accuracy delta ([benchmark table](#tldr-technical)). |
 | **Quantization (QAT)** | Custom straight-through-estimator fake-quant + per-channel weight quantization, 5-epoch fine-tune; recovers the PTQ accuracy gap ([`nano_kws/qat.py`](nano_kws/qat.py)). |
@@ -212,8 +212,6 @@ anything.
                                    └──────────────┘     └──────────────┘
 ```
 
-A higher-resolution diagram lives at [`assets/arch_diagram.png`](assets/arch_diagram.png).
-
 The Streamlit demo wraps the same exported INT8 ONNX in a sliding-window
 [`StreamingClassifier`](nano_kws/streaming.py) for its **Continuous** tab
 — 1-second window, configurable hop, EMA-smoothed posteriors,
@@ -251,33 +249,38 @@ make benchmark        # regenerates the TL;DR table
 ## Repo layout
 
 ```
-nano_kws/        importable package: data, model, train, quantize, infer, benchmark
-scripts/         dataset fetcher, multi-size sweep
-app/             Streamlit live mic demo
+nano_kws/        importable package: data, model, train, quantize, qat, infer, streaming, benchmark
+scripts/         dataset fetcher, multi-size sweep, conv microbenchmark orchestrator
+app/             Streamlit live mic + continuous-mode demo
 cpp/             ONNX Runtime C++ inference harness + hand-written AVX2 conv kernels (microbench)
-assets/          committed INT8 model + benchmark snapshot for zero-setup demo
-tests/           pytest suite (uses synthetic audio, no dataset required)
-docs/            extended results, design notes, MAC budget derivations
-notebooks/       one-off EDA
+assets/          committed fp32 + INT8 (PTQ) + INT8 (QAT) ONNX models, benchmark/sweep/microbench tables, training histories, demo screenshot
+tests/           pytest suite, 131 tests, uses synthetic audio (no dataset download required)
+docs/            scaffold for long-form notes (per-class confusion, MAC budget) — empty for now
+notebooks/       scaffold for one-off EDA notebooks — empty for now
 ```
 
 ---
 
 ## Results
 
-### Accuracy / size / latency sweep
+All headline numbers are inlined above and auto-stamped from the
+benchmark / sweep scripts (so they can't drift):
 
-| Width multiplier | Params | MACs | Top-1 (fp32) | Top-1 (INT8) | INT8 size |
-| ---------------- | ------ | ---- | ------------ | ------------ | --------- |
-| 0.25             | _TBD_  | _TBD_| _TBD_        | _TBD_        | _TBD_     |
-| 0.50 (default)   | _TBD_  | _TBD_| _TBD_        | _TBD_        | _TBD_     |
-| 1.00             | _TBD_  | _TBD_| _TBD_        | _TBD_        | _TBD_     |
+- Accuracy + latency + size for the bundled checkpoint:
+  [TL;DR table](#tldr-technical) (fp32 vs INT8 PTQ vs INT8 QAT).
+- Accuracy vs parameter count vs MACs vs latency across width
+  multipliers: [Model size sweep](#model-size-sweep) +
+  [`assets/sweep_plot.png`](assets/sweep_plot.png).
+- Hand-written kernels vs ATen:
+  [Hand-written conv kernels vs ATen](#hand-written-conv-kernels-vs-aten).
+- Raw artefacts: [`assets/benchmark_table.md`](assets/benchmark_table.md),
+  [`assets/sweep_table.md`](assets/sweep_table.md),
+  [`assets/microbench_table.md`](assets/microbench_table.md),
+  [`assets/ds_cnn_w0p5.history.json`](assets/ds_cnn_w0p5.history.json),
+  [`assets/ds_cnn_w0p5_qat.history.json`](assets/ds_cnn_w0p5_qat.history.json).
 
-Plot: `docs/accuracy_vs_macs.png` *(generated by `scripts/sweep_sizes.py`)*.
-
-### Per-class confusion (small INT8)
-
-See [`docs/benchmark.md`](docs/benchmark.md).
+Per-class confusion matrices are not generated yet — adding them is a
+small follow-up that would slot into `nano_kws/benchmark.py`.
 
 ---
 
