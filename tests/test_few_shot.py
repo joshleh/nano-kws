@@ -14,9 +14,9 @@ from pathlib import Path
 from scripts.few_shot import (
     _BASE_KEYWORDS,
     _NOVEL_KEYWORDS,
-    FewShotCell,
     README_BEGIN,
     README_END,
+    FewShotCell,
     render_markdown,
     update_readme_section,
 )
@@ -108,9 +108,7 @@ def test_render_markdown_lists_keyword_subsets_in_caption() -> None:
 def test_update_readme_section_replaces_block_between_markers(tmp_path: Path) -> None:
     readme = tmp_path / "README.md"
     readme.write_text(
-        "Header.\n\n"
-        f"{README_BEGIN}\n_placeholder_\n{README_END}\n\n"
-        "Footer.\n",
+        f"Header.\n\n{README_BEGIN}\n_placeholder_\n{README_END}\n\nFooter.\n",
         encoding="utf-8",
     )
     assert update_readme_section(readme, "| col |\n| --- |\n| ok |\n")

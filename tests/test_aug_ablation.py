@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 
 from scripts.aug_ablation import (
-    AblationCell,
     README_BEGIN,
     README_END,
+    AblationCell,
     render_markdown,
     update_readme_section,
 )
@@ -86,9 +86,7 @@ def test_render_markdown_records_negative_lift_when_aug_hurts() -> None:
 def test_update_readme_section_replaces_block_between_markers(tmp_path: Path) -> None:
     readme = tmp_path / "README.md"
     readme.write_text(
-        "Before content.\n\n"
-        f"{README_BEGIN}\n_old placeholder_\n{README_END}\n\n"
-        "After content.\n",
+        f"Before content.\n\n{README_BEGIN}\n_old placeholder_\n{README_END}\n\nAfter content.\n",
         encoding="utf-8",
     )
 
