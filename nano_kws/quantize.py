@@ -155,8 +155,8 @@ def real_calibration_batches(
 # ---------------------------------------------------------------------------
 
 
-# ─── Interview note: PTQ design choices in this function ──────────────────
-# Three sub-decisions an interviewer is likely to probe:
+# ─── Design note: PTQ design choices in this function ──────────────────
+# Three sub-decisions worth being explicit about:
 #
 # 1. **QDQ format** (vs QOperator). QDQ inserts QuantizeLinear /
 #    DequantizeLinear pairs around the original fp32 ops; the runtime is

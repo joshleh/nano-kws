@@ -80,5 +80,5 @@ boundary) which validates that **the Python timing isn't artificially
 inflated by the wrapper**. For an actual edge port, the next step is to
 swap `Ort::Session` for the C API on a static-linked, threadless build,
 or to replace ONNX Runtime entirely with a microcontroller runtime
-(TFLite Micro / CMSIS-NN / a vendor SDK such as Syntiant's NDP toolchain)
-— that's the natural follow-on to this harness.
+(TFLite Micro, CMSIS-NN, or a vendor NPU SDK) — that's the natural
+follow-on to this harness.

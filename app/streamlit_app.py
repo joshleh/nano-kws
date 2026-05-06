@@ -411,8 +411,9 @@ def main() -> None:
     # Tab order is deliberate: Upload WAV first because it's the only
     # path that works on both local and deployed (Streamlit Cloud) runs,
     # so first-time visitors land on something that immediately works.
-    # Continuous is the most interesting tab for the Syntiant story but
-    # needs an upload too. Microphone is local-only and goes last.
+    # Continuous is the most interesting tab (it's the wake-word
+    # detector demo) but needs an upload too. Microphone is local-only
+    # and goes last.
     has_mic = _microphone_available()
     tab_upload, tab_continuous, tab_mic = st.tabs(["Upload WAV", "Continuous", "Microphone"])
 

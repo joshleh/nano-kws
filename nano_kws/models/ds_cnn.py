@@ -37,7 +37,7 @@ DEFAULT_N_BLOCKS: int = 4
 INITIAL_KERNEL: tuple[int, int] = (10, 4)
 INITIAL_STRIDE: tuple[int, int] = (2, 2)
 
-# ─── Interview note: why DS-CNN over peer architectures? ────────────────────
+# ─── Design note: why DS-CNN over peer architectures? ────────────────────
 # DS-CNN is the canonical "edge KWS baseline" in the literature (Zhang et al.
 # "Hello Edge", 2017) and a fair midpoint among the alternatives:
 #   * MobileNet — same depthwise-separable trick but designed for ImageNet
@@ -45,7 +45,7 @@ INITIAL_STRIDE: tuple[int, int] = (2, 2)
 #   * TC-ResNet — temporal-only convs, slightly better acc/MAC at the cost
 #     of a more bespoke architecture.
 #   * BC-ResNet — broadcasting frequency/time blocks; SOTA in 2021 KWS work
-#     but harder to explain quickly and overkill for a portfolio piece.
+#     but more architecturally bespoke than is justified at this scope.
 # DS-CNN wins on (a) being a well-known, citable baseline, (b) plain Conv2d
 # blocks that quantize and SIMD-vectorize cleanly, and (c) a single width
 # multiplier knob that gives the whole accuracy-vs-compute curve.
@@ -66,7 +66,7 @@ def _scaled_channels(base: int, multiplier: float, divisor: int = 8) -> int:
 class DepthwiseSeparableBlock(nn.Module):
     """3x3 depthwise + 1x1 pointwise, each followed by BN and ReLU."""
 
-    # ─── Interview note: depthwise-separable vs standard conv ──────────────
+    # ─── Design note: depthwise-separable vs standard conv ──────────────
     # A standard 3x3 conv with C in/out channels does 3*3*C*C MACs per
     # output spatial position. Depthwise-separable splits that into:
     #   * depthwise:  3*3*C   MACs  (one filter per channel, no mixing)
@@ -201,13 +201,14 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-# ─── Interview note: why count MACs ourselves instead of using ptflops/fvcore? ──
+# ─── Design note: why count MACs ourselves instead of using ptflops/fvcore? ──
 # Two reasons. First, removing a third-party MAC counter is one less dependency
 # that could go stale or report something subtly different from the next one.
 # Second, writing the hook is a 20-line exercise that directly forces you to
-# think about the per-layer formula — it's exactly the back-of-the-envelope
-# arithmetic an interviewer is likely to ask about. ("How many MACs does a 3x3
-# depthwise conv on a 16x47 feature map with 56 channels do?" → 3*3 * 1 * 56 *
+# think through the per-layer formula — exactly the back-of-the-envelope
+# arithmetic that comes up whenever you sanity-check an edge-AI deployment
+# budget. ("How many MACs does a 3x3 depthwise conv on a 16x47 feature map
+# with 56 channels do?" → 3*3 * 1 * 56 *
 # 16 * 47 = 379,008.) The hook handles depthwise via `groups`, BN/ReLU/pool
 # are intentionally not counted (negligible compared to convs/linears, and the
 # reporting convention for edge-AI MAC budgets is conv+linear only).

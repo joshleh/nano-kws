@@ -21,17 +21,17 @@ For each op we measure four implementations on the same fp32 input:
 4. **PyTorch ATen** — what ``torch.nn.functional.conv2d`` dispatches
    to on this CPU; that's vendor-tuned MKL-DNN under the hood.
 
-Why this exists for a Syntiant-shaped portfolio
------------------------------------------------
-Edge inference engines (CMSIS-NN, TFLite Micro, vendor-specific stacks
-like Syntiant's) are essentially hand-written kernel libraries
-targeting tight resource budgets. The thing that distinguishes a
-hireable MLE in this space from someone who only knows the
-PyTorch-import-and-train layer is being able to (a) reason about
-throughput and memory traffic, (b) write the SIMD path themselves at
-some level, and (c) honestly benchmark hand-rolled kernels against
-vendor-tuned ones and reason about the gap. This script is a focused
-exercise in exactly that.
+Why this exists
+---------------
+Edge inference engines (CMSIS-NN, TFLite Micro, and the
+vendor-specific NPU SDKs that ship with every dedicated audio
+accelerator) are essentially hand-written kernel libraries targeting
+tight resource budgets. Working productively on that kind of code
+requires being able to (a) reason about throughput and memory
+traffic, (b) write the SIMD path yourself at some level, and (c)
+honestly benchmark hand-rolled kernels against vendor-tuned ones
+and reason about the gap. This script is a focused exercise in
+exactly that.
 
 We do not expect to beat ATen — MKL-DNN has years of cache-blocking,
 register-tiling and CPU-dispatch work behind it. The point is to

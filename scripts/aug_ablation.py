@@ -2,11 +2,11 @@
 
 Why this exists
 ---------------
-The Syntiant Audio Intern role's central problem is **building a usable
-audio classifier from very little real data** (~2 K turkey-gobble
-samples). The named approaches (EcoGen, BirdDiff, AudioLDM) all
-amount to *generative data augmentation* — synthesise more data so the
-classifier has enough to learn from.
+Real-world Acoustic Event Detection (AED) tasks like turkey-gobble,
+glass-break, or smoke-alarm detection typically have only a few
+thousand labelled samples per class — the scale where state-of-the-art
+work reaches for *generative data augmentation* (EcoGen, BirdDiff,
+AudioLDM) to synthesise more training data.
 
 Before reaching for a generative model, the cheap question is:
 **how much accuracy does classical augmentation buy you in that
@@ -16,7 +16,7 @@ We run a 2-axis sweep:
 
 * ``samples-per-class`` ∈ {50, 200, 500} — three points along the
   data-scarcity axis. 200/class ≈ 2.4 K total samples, the same
-  scale as the JD's turkey-gobble dataset.
+  scale as a representative AED training set.
 * ``augmentation`` ∈ {SpecAugment + bg-noise, none} — the existing
   classical-augmentation knob already used by training, toggled via
   ``--no-spec-aug --no-bg-mixer``.

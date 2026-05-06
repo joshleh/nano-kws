@@ -56,7 +56,7 @@ void conv_pointwise_naive(
  * Real-world we'll see 2-4x ATen's MKL-DNN kernel because we're missing
  * register tiling, blocking for L1, and prefetching.
  *
- * --- Interview note: what would close the gap to ATen ---------------------
+ * --- Design note: what would close the gap to ATen ---------------------
  * Pointwise conv is structurally a (C_out, H*W) x (C_in) matmul. The
  * production move is to *call it as one*: reshape and dispatch to a tuned
  * GEMM (cblas_sgemm or a hand-rolled register-blocked microkernel), then

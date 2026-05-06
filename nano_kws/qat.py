@@ -45,10 +45,11 @@ Why not torch.ao.quantization.quantize_fx?
 The FX path traces the model into a ``GraphModule`` and renames
 parameters, which makes it awkward to reuse the existing
 :mod:`nano_kws.export_onnx` pipeline (which expects a vanilla
-:class:`~nano_kws.models.ds_cnn.DSCNN`). A custom STE wrapper is more
-transparent for portfolio purposes — it's easy to point at exactly
-what's being simulated and how the STE backward works — and integrates
-cleanly with the rest of the pipeline.
+:class:`~nano_kws.models.ds_cnn.DSCNN`). A custom STE wrapper keeps
+the model structurally identical to the fp32 baseline so the
+existing export + benchmark scripts consume it unchanged, and is
+much easier to reason about line-by-line than the FX path's
+auto-generated graph.
 
 Usage
 -----
@@ -109,19 +110,18 @@ logger = logging.getLogger("nano_kws.qat")
 QMIN_INT8: int = -128
 QMAX_INT8: int = 127
 
-# ─── Interview note: why a custom STE instead of torch.ao.quantization? ──────
+# ─── Design note: why a custom STE instead of torch.ao.quantization? ──────
 # Two reasons. (1) torch.ao.quantization.quantize_fx traces the model into a
 # GraphModule and rewrites parameter names, which breaks our existing fp32
 # ONNX export pipeline — we'd need a separate export path just for QAT
-# checkpoints. (2) A 30-line custom STE is much more transparent to walk
-# through in an interview: forward is `round((x/scale) + zero_point) * scale -
-# zero_point*scale` clamped to the INT8 grid, backward is identity. There's
-# no magic. The architecture stays a vanilla DSCNN, the QAT wrappers are
-# stripped after training, and the resulting .pt is byte-compatible with the
-# original PTQ pipeline. A production team would absolutely use the official
-# AO toolkit (or even Brevitas) — that's the right scaling answer — but for
-# a portfolio piece "I implemented STE myself and can explain every line"
-# is a stronger signal than "I called .prepare_qat_fx and trusted the magic".
+# checkpoints. (2) A 30-line custom STE is much more transparent: forward
+# is `round((x/scale) + zero_point) * scale - zero_point*scale` clamped to
+# the INT8 grid, backward is identity. There's no magic. The architecture
+# stays a vanilla DSCNN, the QAT wrappers are stripped after training, and
+# the resulting .pt is byte-compatible with the original PTQ pipeline. A
+# production-scale codebase would graduate to the official AO toolkit (or
+# Brevitas) for richer features and better tooling integration; the custom
+# STE here is the focused-scope alternative.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -218,7 +218,7 @@ def per_channel_weight_fake_quant(weight: torch.Tensor) -> torch.Tensor:
     return fake_quantize_symmetric(weight, scale)
 
 
-# ─── Interview note: why this choice cost us 5+ pp in the first run ─────────
+# ─── Design note: why this choice cost us 5+ pp in the first run ─────────
 # The initial QAT implementation used a *symmetric* activation observer, and
 # it actually regressed accuracy by ~5 pp vs PTQ. The fix that recovered
 # the gain was switching to asymmetric here (matching ORT's deployment

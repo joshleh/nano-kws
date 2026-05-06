@@ -10,7 +10,7 @@ repo — is the *hardware-aware ML* trade-off:
 
 * How much does top-1 accuracy fall as we shrink the model?
 * How does that scale with parameter count and MACs / inference (the
-  numbers that matter on an NDP)?
+  numbers that matter on a sub-mW edge accelerator)?
 * Does INT8 PTQ behave consistently across the whole curve, or does
   the smallest variant break first?
 

@@ -39,7 +39,7 @@ logger = logging.getLogger("nano_kws.infer")
 DEFAULT_INPUT_NAME: str = "input"
 DEFAULT_OUTPUT_NAME: str = "logits"
 
-# ─── Interview note: ONNX Runtime as the inference backend ─────────────────
+# ─── Design note: ONNX Runtime as the inference backend ─────────────────
 # Three reasons, in order of importance:
 #   1. Portability. The same ONNX file that the Python demo loads is what
 #      the C++ harness in cpp/infer.cpp consumes (also via ORT) and what a
@@ -57,7 +57,7 @@ DEFAULT_OUTPUT_NAME: str = "logits"
 #      QNN, etc.) — this code path doesn't change.
 # ───────────────────────────────────────────────────────────────────────────
 
-# ─── Interview note: why softmax in Python rather than baked into the graph? ──
+# ─── Design note: why softmax in Python rather than baked into the graph? ──
 # The exported model emits raw logits, not probabilities. Reasons:
 #   * Numerical stability — the subtract-max trick below is easier to
 #     reason about and audit in 4 lines of NumPy than buried inside the

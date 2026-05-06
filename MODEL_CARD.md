@@ -23,8 +23,8 @@
 
 - Demonstrate the train → quantize → export → benchmark pipeline for an
   edge-deployable audio classifier.
-- Reference implementation for portfolio / interview discussion of edge ML
-  systems work.
+- Reference implementation of the train → export → quantize → benchmark
+  loop for edge-deployed audio classifiers.
 - Reference recipe for adapting the same pipeline to non-speech
   **Acoustic Event Detection** (AED) — turkey gobble, glass break,
   baby cry, smoke alarm, etc. The model, frontend, quantization, and

@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 _BACKGROUND_FOLDER: str = "_background_noise_"
 _KEYWORD_SET: frozenset[str] = frozenset(config.KEYWORDS)
 
-# ─── Interview note: the 12-class Speech Commands setup ─────────────────────
+# ─── Design note: the 12-class Speech Commands setup ─────────────────────
 # Speech Commands v0.02 ships with 35 word labels. The standard KWS benchmark
 # (Hello Edge, every paper since) collapses that to 12 classes:
 #   * 10 keywords (the Speech Commands "core" set: yes/no/up/down/left/right/
@@ -76,7 +76,7 @@ def _load_wav_mono(path: str | Path) -> torch.Tensor:
     2.9+ delegates loading to ``torchcodec`` (which pulls ffmpeg as a heavy
     dependency), and Speech Commands clips are simple 16 kHz 16-bit PCM
     WAVs that ``soundfile`` reads natively. Keeping the runtime dependency
-    surface small matters more for an edge-AI portfolio piece than the
+    surface small matters more for an edge-AI focused project than the
     convenience of torchaudio's loader.
     """
     data, sr = sf.read(str(path), dtype="float32", always_2d=False)
@@ -259,7 +259,7 @@ class SpeechCommandsKWS(Dataset):
 # ---------------------------------------------------------------------------
 
 
-# ─── Interview note: why a wrapper instead of touching SpeechCommandsKWS ────
+# ─── Design note: why a wrapper instead of touching SpeechCommandsKWS ────
 # The base dataset is the canonical 12-class KWS construction and is used
 # by every other phase of the repo (training, quantize calibration,
 # benchmarking). Adding "filter to a subset of classes" or "subsample per

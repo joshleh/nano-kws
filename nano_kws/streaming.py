@@ -9,12 +9,13 @@ track. This module implements that glue in pure Python on top of
 :class:`nano_kws.infer.KwsInferencer`.
 
 This is exactly what wake-word detection in production looks like —
-including, structurally, what runs on Syntiant's NDPs in earbuds and
-smart speakers, where the same window-based primitive gets wrapped in
-a hardware-friendly ring buffer + posterior smoother. We do the
-software version here purely so the Streamlit demo can run against
-arbitrarily long recordings without lying about what the model is
-fundamentally classifying (a 1-second clip).
+structurally identical to what runs on the dedicated audio
+accelerators in earbuds and smart speakers, where the same
+window-based primitive gets wrapped in a hardware-friendly ring
+buffer + posterior smoother. We do the software version here purely
+so the Streamlit demo can run against arbitrarily long recordings
+without lying about what the model is fundamentally classifying (a
+1-second clip).
 
 Out of scope on purpose:
 
@@ -40,10 +41,9 @@ from nano_kws.infer import KwsInferencer
 logger = logging.getLogger("nano_kws.streaming")
 
 
-# ─── Interview note: this whole module is the "streaming wrapper" answer ────
-# A common interview probe: "Your model takes a fixed 1-second clip. How
-# would you build a wake-word detector on top of it?" The answer is exactly
-# the three-stage pipeline this module implements:
+# ─── Design note: this whole module is the "streaming wrapper" recipe ──────
+# Given a fixed-window classifier, the canonical way to build a wake-word
+# detector on top is exactly the three-stage pipeline implemented here:
 #   1. Slide the fixed-window classifier across the audio at a small hop
 #      (100-300 ms is typical; smaller = better localization but more compute).
 #   2. Smooth the per-window posteriors over time. Without smoothing you get
@@ -54,10 +54,11 @@ logger = logging.getLogger("nano_kws.streaming")
 #      AND is a local maximum AND is outside the refractory window of the
 #      last trigger. The refractory window prevents a single keyword from
 #      firing N adjacent windows.
-# The hardware version on a real NDP looks the same logically but runs on
-# a circular ring buffer of audio + an incrementally-updated mel
-# spectrogram (no per-window recomputation), with the smoothing + peak
-# logic in a tiny C state machine. This module is the software reference.
+# The hardware version on a dedicated edge accelerator looks the same
+# logically but runs on a circular ring buffer of audio + an incrementally
+# updated mel spectrogram (no per-window recomputation), with the smoothing
+# + peak logic in a tiny C state machine. This module is the software
+# reference.
 # ────────────────────────────────────────────────────────────────────────────
 
 DEFAULT_HOP_MS: float = 200.0

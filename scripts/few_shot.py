@@ -2,15 +2,15 @@
 
 Why this exists
 ---------------
-The Syntiant Audio Intern role's central question is:
+Real-world Acoustic Event Detection (AED) tasks have far less data
+than KWS — typically ~2 K labelled samples of a new target sound
+(turkey gobble, glass break, smoke alarm). The standard answer is
+to **fine-tune a pretrained audio model rather than train from
+scratch**, but the question is *how much does that actually buy you,
+and at what data budget does the gap close?*
 
-    "I have a pretrained audio model and ~2 K labelled samples of a
-    new target sound. How well does fine-tuning work compared to
-    training from scratch?"
-
-This script runs the structural analog of that question on Speech
-Commands, which is large enough to support an apples-to-apples
-comparison:
+This script runs that comparison on Speech Commands, which is large
+enough to support an apples-to-apples sweep:
 
 1. **Base task** — train DS-CNN-w0.5 from scratch on a "base" subset
    of 6 of the 10 keywords (yes, no, up, down, left, right) plus

@@ -5,11 +5,12 @@ that DS-CNN spends almost all its compute on, with a Python harness
 that pits each implementation against PyTorch's MKL-DNN-backed
 `torch.nn.functional.conv2d`.
 
-The point isn't to *beat* ATen — it's to **quantify the gap** and have
-something concrete to point at when an interviewer asks "OK, but could
-you write the kernel yourself?". For an MLE role on a vendor-kernel
-team (CMSIS-NN, TFLite Micro, Syntiant's NDP toolchain, …) being
-articulate about that gap and what closes it is core competency.
+The point isn't to *beat* ATen — it's to **quantify the gap** and
+demonstrate the kernel-writing competency that any
+vendor-kernel-team work (CMSIS-NN, TFLite Micro, vendor NPU SDKs)
+requires: being articulate about exactly what closes the gap to a
+production library, and what each optimisation costs in
+maintainability and portability.
 
 ## Contents
 

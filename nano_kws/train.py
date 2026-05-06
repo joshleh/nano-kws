@@ -504,7 +504,7 @@ def main(argv: list[str] | None = None) -> None:
         ).to(device)
 
     # ----- Optimizer + schedule -----
-    # ─── Interview note: training-loop choices ─────────────────────────────
+    # ─── Design note: training-loop choices ─────────────────────────────
     # AdamW (decoupled weight decay) is the safe default for small CNNs at
     # this scale — converges in 30 epochs without learning-rate-finder
     # gymnastics, and the decoupled L2 means we can tune weight_decay

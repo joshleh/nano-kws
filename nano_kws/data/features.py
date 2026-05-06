@@ -33,7 +33,7 @@ from nano_kws import config
 LOG_EPS: float = 1e-6
 """Floor added before ``log`` to keep silence frames finite."""
 
-# ─── Interview note: why log-mel and why these specific parameters? ─────────
+# ─── Design note: why log-mel and why these specific parameters? ─────────
 # Audio classification doesn't feed raw 16 kHz PCM into a CNN — that would
 # be a fully-connected pile of weights against 16 000-sample vectors. Every
 # production speech model goes through a 2D time-frequency representation
