@@ -144,7 +144,9 @@ def _train_subprocess(
     elapsed = time.perf_counter() - t0
 
     if proc.returncode != 0:
-        tail = log_path.read_text(encoding="utf-8").splitlines()[-30:]
+        # `errors="replace"` handles non-UTF-8 bytes that Python's logger
+        # emits on Windows (e.g. em-dashes encoded as CP1252).
+        tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
         for line in tail:
             logger.error("  %s", line)
         raise RuntimeError(f"Training run [{label}] failed; see {log_path}")
@@ -159,7 +161,9 @@ _SPLIT_RE = re.compile(r"Train:\s*(\d+)\s*clips\s*\|\s*Val:\s*(\d+)\s*clips")
 
 
 def _parse_split_sizes(log_path: Path) -> tuple[int, int]:
-    text = log_path.read_text(encoding="utf-8")
+    # `errors="replace"` handles non-UTF-8 bytes that Python's logger
+    # emits on Windows (e.g. em-dashes encoded as CP1252).
+    text = log_path.read_text(encoding="utf-8", errors="replace")
     m = _SPLIT_RE.search(text)
     if not m:
         return -1, -1

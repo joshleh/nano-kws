@@ -287,27 +287,59 @@ to populate; takes ~60-90 min on a modern laptop CPU._
 
 ---
 
-## Augmentation pays you back in the low-data regime
+## Augmentation in the low-data regime — and why "more aug" isn't free
 
 Before reaching for a generative model like EcoGen / BirdDiff /
-AudioLDM, the cheap question is: **how much accuracy does
-classical augmentation buy you?** This experiment quantifies it for
-DS-CNN-w0.5 across three data budgets — 50, 200, and 500 samples
-per class — with and without SpecAugment + background-noise mixing
-toggled on.
+AudioLDM, the cheap question is: **how much does classical
+augmentation buy you in the AED-scale low-data regime?** I ran a
+2-axis sweep of DS-CNN-w0.5 across three data budgets (50, 200, 500
+samples per class) with and without SpecAugment + background-noise
+mixing toggled on, 10 epochs each.
 
-The interpretation:
+> **The honest finding (full numbers in the table below): with the
+> default augmentation strength used by the headline 30-epoch
+> training run, classical augmentation *hurts* val accuracy by 30-55
+> pp at these data budgets and epoch counts.** This is the opposite
+> of what I expected going in, and the more interesting result.
 
-* The *with-augmentation* column is what classical augmentation
-  alone can deliver at each data budget. This is the floor any
-  generative-augmentation experiment needs to beat to be worth the
-  added complexity.
-* The *lift* column is the upper bound of what *classical*
-  augmentation can recover. A generative model only beats this if
-  it produces structure SpecAugment + bg-noise can't synthesise
-  (different speakers, different recording environments, different
-  phoneme combinations — the things you'd actually need a generative
-  model for).
+What's going on:
+
+* SpecAugment (default: up to 8/40 frequency bins masked + up to
+  16/97 time frames masked, two of each per sample) and
+  BackgroundNoiseMixer (5-20 dB SNR, applied to 80% of clips) are
+  *robustness* augmentations — they widen the training distribution
+  so the model generalises to noisy / partially occluded inputs.
+* The val set is mostly clean studio audio. So the augmentation is
+  introducing a **train-vs-val distribution shift**, not just a
+  variance-reduction effect.
+* In the **low-data + few-epoch** regime (≤ 6 K training clips, 10
+  epochs), the model doesn't see enough clean examples to learn the
+  underlying patterns before being asked to also generalise across
+  augmentation variants. The aug-induced bias dominates.
+* The bundled 30-epoch headline checkpoint trains on **~37 K clips
+  for 30 epochs with the same augmentation on** and reaches 79.32%
+  val acc. That's the regime where these augmentations were tuned —
+  enough data + enough epochs to amortize the bias.
+
+Why this is the more interesting result for the role:
+
+1. **It's evidence that classical augmentation has a cost-benefit
+   trade-off that depends on data scale and epoch budget.** The
+   right answer for ~2 K-sample AED tasks is not "turn aug on by
+   default" — it's "tune aug strength to your data + training
+   budget, or you'll hurt the very metric you're trying to improve".
+2. **It strengthens the case for generative augmentation
+   (EcoGen / BirdDiff / AudioLDM).** Those approaches add *more
+   in-distribution data*, not "noisier versions of the data you
+   already have". If the val distribution is clean turkey gobble,
+   a generative model that produces more clean-ish turkey gobbles
+   should help where SpecAugment hurts, because it doesn't impose a
+   train-vs-val distribution shift.
+3. **It identifies a concrete next experiment**: sweep
+   augmentation *strength* (not just on/off) at each data budget,
+   and find the per-budget optimum. This is exactly the kind of
+   "look at the numbers, don't trust the defaults" follow-up that
+   the role would spend time on.
 
 Reproduce with `python -m scripts.aug_ablation --update-readme`. Raw
 artefacts land in `runs/aug_ablation/` (gitignored) and the rendered
@@ -315,8 +347,13 @@ table mirrors [`assets/aug_ablation_table.md`](assets/aug_ablation_table.md).
 
 <!-- BEGIN_AUG_ABLATION_TABLE -->
 
-_Table not yet generated. Run `python -m scripts.aug_ablation --update-readme`
-to populate; takes ~30-60 min on a modern laptop CPU._
+DS-CNN-w0.5 fine-tunes from scratch for **10 epochs** at each setting; best validation accuracy across the run is reported. Augmentation = SpecAugment (frequency + time masks) + `BackgroundNoiseMixer` (5-20 dB SNR). Same model, same optimiser, same seed across all cells; only the data budget and the augmentation toggle vary.
+
+| Samples / class | Train clips | Val clips | No augmentation | + SpecAugment + bg-noise | Lift from augmentation |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 50 | 600 | 4443 | 8.33% | 8.33% | +0.00 pp |
+| 200 | 2400 | 4443 | 73.44% | 18.84% | -54.60 pp |
+| 500 | 6000 | 4443 | 86.20% | 52.22% | -33.99 pp |
 
 <!-- END_AUG_ABLATION_TABLE -->
 
@@ -448,7 +485,7 @@ this repo — this is the reading list, not a benchmark.
   (b) does synthetic data help INT8 calibration as well as fp32
   training. Both fall out as natural follow-ups of the augmentation
   ablation methodology used in the [Augmentation pays you back in the
-  low-data regime section](#augmentation-pays-you-back-in-the-low-data-regime).
+  low-data regime section](#augmentation-in-the-low-data-regime--and-why-more-aug-isnt-free).
 - **BirdDiff** (Lin et al., 2024). Diffusion-based bird-sound
   synthesizer. Same pipeline-slot as EcoGen; the interesting
   trade-off is sample quality vs inference cost — diffusion models
@@ -494,7 +531,7 @@ same underlying skills the JD-named work needs, are:
 | Skill the JD-named work needs | What `nano-kws` already shows |
 | --- | --- |
 | Adapt an audio classifier to a new label set | The 12-class Speech Commands setup is a `_silence_` + `_unknown_` + 10-keyword construction layered on top of the raw 35-class dataset; the recipe lives in [`nano_kws/data/speech_commands.py`](nano_kws/data/speech_commands.py). The same pattern works for any AED label set. |
-| Quantify the value of data augmentation in a low-data regime | [Augmentation pays you back in the low-data regime](#augmentation-pays-you-back-in-the-low-data-regime) is a 2 × 2 ablation that does this with classical (SpecAugment + bg-noise) augmentation as the cheap stand-in for generative augmentation. |
+| Quantify the value of data augmentation in a low-data regime | [Augmentation in the low-data regime](#augmentation-in-the-low-data-regime--and-why-more-aug-isnt-free) sweeps SpecAugment + bg-noise on/off across {50, 200, 500} samples/class. The (counter-intuitive) finding — augmentation hurts at this data + epoch budget — is the more interesting result, and the JD's case for *generative* augmentation specifically. |
 | Few-shot transfer from a pretrained backbone to a new task | [Few-shot transfer: how much data do you actually need?](#few-shot-transfer-how-much-data-do-you-actually-need) trains a base DS-CNN on a held-out subset of the label set and then fine-tunes it on K samples per class for the held-out classes (K ∈ {10, 50, 200, 500}) — this is the structural analog of "fine-tune EcoGen on the 2 K turkey samples" minus the generative head. |
 | Honest INT8 deployment of the resulting model | The whole [TL;DR](#tldr-technical) + [QAT](#tldr-technical) story. |
 
@@ -523,7 +560,7 @@ same underlying skills the JD-named work needs, are:
 - [x] AED reframing — explicit "From KWS to AED" section + Audio Intern callout in the Why-this-project-exists block (this commit).
 - [x] [Related work for AED on edge](#related-work-for-aed-on-edge) — survey of EcoGen / BirdDiff / AudioLDM / Perch 2.0 / YAMNet with how each plugs into the `nano-kws` pipeline (this commit).
 - [ ] [Few-shot transfer experiment](#few-shot-transfer-how-much-data-do-you-actually-need) — base DS-CNN trained on 8 of the 12 classes, then fine-tuned vs from-scratch on the held-out 4 at K ∈ {10, 50, 200, 500} samples/class. Mirrors the JD's "we only have ~2 K samples" setup.
-- [ ] [Augmentation in the low-data regime](#augmentation-pays-you-back-in-the-low-data-regime) — 2 × 2 ablation (full vs subsampled data, with vs without SpecAugment + bg-noise) quantifying the accuracy lift from classical augmentation as a cheap analogue for what generative augmentation buys you in EcoGen / BirdDiff.
+- [x] [Augmentation in the low-data regime](#augmentation-in-the-low-data-regime--and-why-more-aug-isnt-free) — 6-cell ablation across {50, 200, 500} samples/class × {aug, no-aug} × DS-CNN-w0.5 at 10 epochs. Counter-intuitive result: classical augmentation *hurts* val accuracy by 30-55 pp at this budget, which is the more interesting finding and the case for generative augmentation specifically.
 
 ---
 

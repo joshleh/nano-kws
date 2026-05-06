@@ -122,7 +122,9 @@ def _run_training(
 
     if proc.returncode != 0:
         # Print last few lines of the log inline so the failure is visible.
-        tail = log_path.read_text(encoding="utf-8").splitlines()[-30:]
+        # `errors="replace"` because Python's logger may emit em-dashes etc.
+        # encoded as CP1252 on Windows even though we wrote in text mode.
+        tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
         for line in tail:
             logger.error("  %s", line)
         raise RuntimeError(
@@ -152,7 +154,9 @@ _SPLIT_RE = re.compile(r"Train:\s*(\d+)\s*clips\s*\|\s*Val:\s*(\d+)\s*clips")
 
 
 def _parse_split_sizes(log_path: Path) -> tuple[int, int]:
-    text = log_path.read_text(encoding="utf-8")
+    # `errors="replace"` handles non-UTF-8 bytes that Python's logger
+    # emits on Windows (e.g. em-dashes encoded as CP1252).
+    text = log_path.read_text(encoding="utf-8", errors="replace")
     m = _SPLIT_RE.search(text)
     if not m:
         return -1, -1
