@@ -1,15 +1,24 @@
 """Streamlit live demo for the bundled INT8 keyword spotter.
 
 The demo runs against ``assets/ds_cnn_small_int8.onnx`` so a fresh clone
-can launch it with ``make app`` without any training. Two input paths
-are supported:
+can launch it with ``make app`` without any training. Three input paths
+are supported (in tab order):
 
-* **Mic capture** (default): click *Record 1 second* to capture audio
-  from the default input device via ``sounddevice``.
-* **WAV upload**: drop a 16 kHz mono WAV (or anything ``soundfile`` can
-  decode); we resample / pad / crop to 1 s for you.
+* **WAV upload** (default): drop a 16 kHz mono WAV (or anything
+  ``soundfile`` can decode); we resample / pad / crop to 1 s for you.
+  Works locally and on the deployed Streamlit Cloud demo — this is the
+  fallback path that always works.
+* **Continuous**: same upload path, but the model is slid across a
+  longer recording (1 s window, configurable hop) with EMA smoothing
+  and per-keyword peak-picking — the building block of every wake-word
+  detector.
+* **Microphone**: click *Record 1 second* to capture audio from the
+  default input device via ``sounddevice``. Local-only — the deployed
+  Streamlit Cloud container has no audio device, and the UI detects
+  this and disables the button rather than surfacing a low-level
+  PortAudio error.
 
-Both paths flow through the *same* preprocessing as training
+All paths flow through the *same* preprocessing as training
 (:class:`nano_kws.data.features.LogMelSpectrogram` +
 :func:`nano_kws.data.features.pad_or_crop`) so the spectrogram you see
 is bit-identical to what the model received.
@@ -55,6 +64,36 @@ def _load_inferencer(model_path: str) -> KwsInferencer:
 @st.cache_resource
 def _featurizer() -> LogMelSpectrogram:
     return LogMelSpectrogram().eval()
+
+
+@st.cache_resource(show_spinner=False)
+def _microphone_available() -> bool:
+    """Return True iff the host has at least one usable input device.
+
+    Cached at the process level so we don't re-probe ``sounddevice`` on
+    every Streamlit rerun. Used to gate the mic-based tabs: on the
+    deployed Streamlit Cloud demo there's no audio hardware, so
+    clicking "Record" otherwise produces a cryptic PortAudio error
+    like ``Error querying device -1``. We'd rather just disable the
+    button and show a clear "this only works locally" message.
+
+    Returns False on:
+      * ``sounddevice`` not importable (PortAudio shared lib missing).
+      * Successful import but no device with ``max_input_channels > 0``.
+      * Any other error during the probe (defensive: we never want this
+        check itself to break the page).
+    """
+    try:
+        import sounddevice as sd
+    except (ImportError, OSError):
+        return False
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return False
+    if isinstance(devices, dict):
+        devices = [devices]
+    return any(d.get("max_input_channels", 0) > 0 for d in devices)
 
 
 def _streaming_classifier(
@@ -296,13 +335,16 @@ ultra-low-power chip you'd find in a battery-powered device.
 
 **How to try it:**
 
-1. Use the **Upload WAV** tab on the right and drop in a short audio
-   clip of yourself (or anyone) saying one of the 10 keywords.
-2. Or use the **Continuous** tab to upload a longer recording and
-   watch the model fire detections over time.
+1. The **Upload WAV** tab (open by default) is the simplest path —
+   drop in a short audio clip of yourself (or anyone) saying one of
+   the 10 keywords and the model will tell you what it heard.
+2. The **Continuous** tab takes a longer recording (try 5-10 seconds
+   of you saying multiple keywords with pauses) and slides the model
+   across it, plotting each keyword's probability over time and
+   listing the detections.
 3. The **Microphone** tab works only when you run the demo locally on
    your own computer — the cloud server here has no microphone
-   attached.
+   attached, so the Record button is disabled in that case.
 
 **Want the technical story?** Source code, design decisions, accuracy
 benchmarks, and the model card all live at the
@@ -366,20 +408,13 @@ def main() -> None:
     hop_ms, ema_alpha, detection_threshold, detection_refractory_s = _render_continuous_controls()
     inferencer = _load_inferencer(model_path)
 
-    tab_mic, tab_upload, tab_continuous = st.tabs(["Microphone", "Upload WAV", "Continuous"])
-
-    with tab_mic:
-        st.info(
-            "Microphone capture only works locally — the hosted Streamlit "
-            "Community Cloud container has no audio input device. If you're "
-            "viewing this on the deployed demo, use the **Upload WAV** tab "
-            "instead. Run `make app` locally to use the mic path."
-        )
-        if st.button(f"Record {seconds:g} second(s)", type="primary"):
-            with st.spinner("Recording ..."):
-                waveform = _record_from_mic(seconds, config.SAMPLE_RATE)
-            if waveform is not None:
-                _render_prediction(inferencer, waveform)
+    # Tab order is deliberate: Upload WAV first because it's the only
+    # path that works on both local and deployed (Streamlit Cloud) runs,
+    # so first-time visitors land on something that immediately works.
+    # Continuous is the most interesting tab for the Syntiant story but
+    # needs an upload too. Microphone is local-only and goes last.
+    has_mic = _microphone_available()
+    tab_upload, tab_continuous, tab_mic = st.tabs(["Upload WAV", "Continuous", "Microphone"])
 
     with tab_upload:
         uploaded = st.file_uploader(
@@ -397,39 +432,7 @@ def main() -> None:
             "Tune the hop, smoothing, and threshold from the sidebar."
         )
 
-        sub_mic, sub_upload = st.tabs(["Record (local)", "Upload long WAV"])
-
-        with sub_mic:
-            st.info(
-                "Microphone capture only works locally. On the cloud demo, use "
-                "**Upload long WAV** below — it works the same way."
-            )
-            cont_seconds = st.slider(
-                "Recording length (s)",
-                min_value=2.0,
-                max_value=CONTINUOUS_MAX_SECONDS,
-                value=5.0,
-                step=0.5,
-                key="continuous_seconds",
-            )
-            if st.button(
-                f"Record {cont_seconds:g} second(s) and stream-classify",
-                type="primary",
-                key="continuous_record_button",
-            ):
-                with st.spinner(f"Recording {cont_seconds:g}s ..."):
-                    waveform = _record_from_mic(cont_seconds, config.SAMPLE_RATE)
-                if waveform is not None:
-                    classifier = _streaming_classifier(
-                        inferencer,
-                        hop_ms=hop_ms,
-                        ema_alpha=ema_alpha,
-                        detection_threshold=detection_threshold,
-                        detection_refractory_s=detection_refractory_s,
-                    )
-                    with st.spinner("Running sliding-window classifier ..."):
-                        result = classifier.classify(waveform)
-                    _render_streaming_result(waveform, result)
+        sub_upload, sub_mic = st.tabs(["Upload long WAV", "Record (local)"])
 
         with sub_upload:
             cont_uploaded = st.file_uploader(
@@ -452,6 +455,77 @@ def main() -> None:
                 ):
                     result = classifier.classify(waveform)
                 _render_streaming_result(waveform, result)
+
+        with sub_mic:
+            if has_mic:
+                st.info(
+                    "Microphone capture works because you're running locally. "
+                    "On the deployed Streamlit Cloud demo this button is "
+                    "disabled (no audio device on the host)."
+                )
+            else:
+                st.warning(
+                    "**No microphone detected on this host** — you're almost "
+                    "certainly viewing the deployed Streamlit Cloud demo, "
+                    "which has no audio input device. Use the **Upload long "
+                    "WAV** sub-tab instead — it runs the exact same streaming "
+                    "classifier on a recording you upload. To use the mic "
+                    "path, clone the repo and run `make app` locally."
+                )
+            cont_seconds = st.slider(
+                "Recording length (s)",
+                min_value=2.0,
+                max_value=CONTINUOUS_MAX_SECONDS,
+                value=5.0,
+                step=0.5,
+                key="continuous_seconds",
+                disabled=not has_mic,
+            )
+            if st.button(
+                f"Record {cont_seconds:g} second(s) and stream-classify",
+                type="primary",
+                key="continuous_record_button",
+                disabled=not has_mic,
+            ):
+                with st.spinner(f"Recording {cont_seconds:g}s ..."):
+                    waveform = _record_from_mic(cont_seconds, config.SAMPLE_RATE)
+                if waveform is not None:
+                    classifier = _streaming_classifier(
+                        inferencer,
+                        hop_ms=hop_ms,
+                        ema_alpha=ema_alpha,
+                        detection_threshold=detection_threshold,
+                        detection_refractory_s=detection_refractory_s,
+                    )
+                    with st.spinner("Running sliding-window classifier ..."):
+                        result = classifier.classify(waveform)
+                    _render_streaming_result(waveform, result)
+
+    with tab_mic:
+        if has_mic:
+            st.info(
+                "Microphone capture works because you're running locally. "
+                "On the deployed Streamlit Cloud demo this button is "
+                "disabled (no audio device on the host)."
+            )
+        else:
+            st.warning(
+                "**No microphone detected on this host** — you're almost "
+                "certainly viewing the deployed Streamlit Cloud demo, "
+                "which has no audio input device. Use the **Upload WAV** or "
+                "**Continuous** tabs above — they both work fully on the "
+                "deployed demo. To use the mic path, clone the repo and "
+                "run `make app` locally."
+            )
+        if st.button(
+            f"Record {seconds:g} second(s)",
+            type="primary",
+            disabled=not has_mic,
+        ):
+            with st.spinner("Recording ..."):
+                waveform = _record_from_mic(seconds, config.SAMPLE_RATE)
+            if waveform is not None:
+                _render_prediction(inferencer, waveform)
 
     with st.expander("Model details"):
         st.json(
