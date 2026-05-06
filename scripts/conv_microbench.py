@@ -354,14 +354,12 @@ def render_markdown(
     )
     lines.append("")
 
-    has_c_naive = any(
-        r.impl == "C naive" for r in (pointwise_results + depthwise_results)
-    )
+    has_c_naive = any(r.impl == "C naive" for r in (pointwise_results + depthwise_results))
 
     lines.append(
         "**Legend.** *Speedup vs C naive* divides each row's mean wall-time by "
         "the hand-written C scalar (`C naive`) baseline, so it answers "
-        "\"how much faster than a textbook nested-loop C kernel?\". "
+        '"how much faster than a textbook nested-loop C kernel?". '
         "*Correct?* compares the implementation's output to ATen "
         "element-wise (max absolute error `<= --atol`, default 1e-3); `ref` "
         "marks the ATen reference itself."

@@ -116,9 +116,7 @@ def test_pad_or_crop_always_returns_torch_float32_tensor(rng: np.random.Generato
         rng.standard_normal(config.CLIP_SAMPLES).astype(np.float32),
         rng.standard_normal(config.CLIP_SAMPLES * 2).astype(np.float32),
         torch.from_numpy(rng.standard_normal(config.CLIP_SAMPLES).astype(np.float32)),
-        torch.from_numpy(
-            rng.standard_normal(config.CLIP_SAMPLES // 3).astype(np.float64)
-        ),
+        torch.from_numpy(rng.standard_normal(config.CLIP_SAMPLES // 3).astype(np.float64)),
     ):
         out = pad_or_crop(inp)
         assert isinstance(out, torch.Tensor)

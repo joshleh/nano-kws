@@ -1,0 +1,16 @@
+# Normalize line endings to LF on commit for all text files.
+# This prevents ruff format --check failures on Linux CI when files
+# are edited on Windows (which writes CRLF by default).
+* text=auto eol=lf
+
+# Binary files — never mangle these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pt binary
+*.onnx binary
+*.dll binary
+*.so binary
+*.dylib binary
