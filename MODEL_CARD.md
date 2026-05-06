@@ -25,6 +25,12 @@
   edge-deployable audio classifier.
 - Reference implementation for portfolio / interview discussion of edge ML
   systems work.
+- Reference recipe for adapting the same pipeline to non-speech
+  **Acoustic Event Detection** (AED) — turkey gobble, glass break,
+  baby cry, smoke alarm, etc. The model, frontend, quantization, and
+  C++ inference path are dataset-agnostic; the work to retarget is
+  contained in the dataset module + label set. See the
+  [README "From KWS to AED" section](README.md#from-kws-to-aed-same-recipe-different-label-set).
 
 ## Out-of-scope use
 
@@ -89,7 +95,8 @@ INT8 checkpoint reaches 90.67 % top-1 at 93.4 KB.
   10 target keywords into `_unknown_`. The model is not designed to handle
   open-vocabulary speech.
 - **Quantization.** INT8 PTQ can have non-uniform per-class accuracy impact;
-  see the per-class confusion matrix in `docs/benchmark.md` after Phase 4.
+  per-class confusion matrices are not currently generated and are
+  flagged as a follow-up in the [README Results section](README.md#results).
 
 ## Citation
 
@@ -100,6 +107,6 @@ If you reference this work:
   author = {Joshua Lee},
   title  = {nano-kws: Edge-deployable keyword spotter},
   year   = {2026},
-  url    = {https://github.com/joshualee/nano-kws}
+  url    = {https://github.com/joshleh/nano-kws}
 }
 ```

@@ -51,6 +51,7 @@ specific code, results, and design decisions you can dig into:
 | Area | What's here |
 | --- | --- |
 | **Audio ML** | Log-mel spectrogram frontend matched bit-for-bit between training and inference ([`nano_kws/data/features.py`](nano_kws/data/features.py)); 12-class Speech Commands setup. |
+| **AED applicability** | The pipeline is keyword-specific only at the dataset and label-set layer — the model, frontend, quantization, and deployment recipe transfer to non-speech *Acoustic Event Detection* (turkey gobble, glass-break, baby cry, smoke alarm) by swapping the dataset module. Documented in the [From KWS to AED section](#from-kws-to-aed-same-recipe-different-label-set). |
 | **Model design** | DS-CNN (depthwise-separable convs) with a width multiplier so the same architecture sweeps from 18 K to 224 K parameters ([`nano_kws/models/ds_cnn.py`](nano_kws/models/ds_cnn.py)). |
 | **Hardware-aware tradeoffs** | Multi-size sweep reporting accuracy vs parameter count vs MACs vs latency ([sweep table](#model-size-sweep)). |
 | **Quantization (PTQ)** | Static post-training quantization to INT8 via ONNX Runtime — 2.6× smaller, faster, with measured accuracy delta ([benchmark table](#tldr-technical)). |
@@ -62,13 +63,22 @@ specific code, results, and design decisions you can dig into:
 | **Deployment** | Streamlit web demo deployed on Streamlit Community Cloud with the bundled INT8 model — zero training required for a fresh clone. |
 
 > **Why this project exists:** I built `nano-kws` while preparing for a
-> Machine Learning Engineering Intern interview at **Syntiant**, who
-> design ultra-low-power Neural Decision Processors for on-device voice
-> AI. The repo is structured to mirror their actual work: train in
-> PyTorch, quantize to INT8, deploy to constrained hardware, measure
-> everything. It's a 1-2 week portfolio sprint, not a research project
-> — scope was kept ruthlessly narrow to make the engineering bar
-> visible.
+> **Machine Learning Audio Intern** interview at **Syntiant**, who
+> design ultra-low-power Neural Decision Processors (NDPs) for
+> on-device voice and audio AI. The repo is structured to mirror the
+> deployment pipeline that ships an audio model onto an NDP: train in
+> PyTorch, quantize to INT8, export to ONNX, benchmark every step
+> honestly. The advertised summer project is a **turkey-gobble Acoustic
+> Event Detector** trained from a tiny (~2 K) sample budget, with
+> generative augmentation (EcoGen, BirdDiff, AudioLDM, Perch 2.0) used
+> to expand the training set. `nano-kws` is the *deployment-side*
+> portion of that recipe demonstrated end-to-end on a more public
+> dataset (Speech Commands), with the explicit AED extension argument
+> documented in the [From KWS to AED section](#from-kws-to-aed-same-recipe-different-label-set)
+> and a survey of the JD-named generative-augmentation models in the
+> [Related work for AED on edge section](#related-work-for-aed-on-edge).
+> It's a 1-2 week sprint, not a research project — scope was kept
+> ruthlessly narrow to make the engineering bar visible.
 
 ---
 
@@ -200,6 +210,47 @@ anything.
 
 ---
 
+## From KWS to AED: same recipe, different label set
+
+Keyword Spotting (KWS — "did the user say *yes / stop / on*?") and
+Acoustic Event Detection (AED — "did the device hear a *turkey gobble
+/ glass break / smoke alarm*?") are the **same problem at the
+deployment layer**. Both ingest a short audio clip, both run a small
+CNN on a log-mel spectrogram, both deploy to a sub-mW NDP, and both
+care about the same metrics (accuracy, latency, model size, peak
+RAM, MACs per inference). The only things that change going from
+KWS to AED are:
+
+| Layer | KWS (this repo) | AED (e.g. Syntiant turkey-gobble project) |
+| --- | --- | --- |
+| Dataset module | Speech Commands v0.02 (~85 K labelled 1-s utterances) | Domain-specific event recordings (~2 K samples typical) |
+| Label set | 10 keywords + `_silence_` + `_unknown_` | The events of interest + a `_background_` / negative class |
+| Frontend | Log-mel, 40 mels x 97 frames at 16 kHz / 30 ms / 10 ms | Identical — log-mel is the standard frontend for both KWS and most AED work |
+| Backbone | DS-CNN (`nano_kws/models/ds_cnn.py`) | Same. DS-CNN, TC-ResNet, BC-ResNet, MobileNet are all valid here. |
+| Quantization → ONNX → ORT C++ | [Bundled INT8 export](#tldr-technical) | Identical — the whole `nano_kws.quantize` → `cpp/infer.cpp` path is dataset-agnostic. |
+| Hard part that changes | Less data per class than KWS, so augmentation + few-shot transfer dominate the accuracy story | (this is what the JD's EcoGen / BirdDiff / Perch 2.0 work is targeting) |
+
+In practice, porting `nano-kws` to a new AED task means:
+
+1. Subclass `nano_kws/data/speech_commands.py` (or write a sibling
+   `nano_kws/data/<your_dataset>.py`) that yields
+   `(waveform_16k_mono, label_int)` tuples.
+2. Update `config.LABELS` / `config.NUM_CLASSES` to match the new
+   label set.
+3. Run `make train` → `make quantize` → `make benchmark`. Everything
+   downstream of the dataset module — featurizer, model, training
+   loop, ONNX export, INT8 calibration, C++ inference, microbench,
+   streaming — is reused unchanged.
+
+The two AED-specific stories that *don't* fall out for free — and
+that the Syntiant Audio Intern role would actually spend the summer
+on — are **few-shot transfer from a pretrained audio backbone** and
+**generative data augmentation** (EcoGen, BirdDiff, AudioLDM). See
+the [Related work for AED on edge section](#related-work-for-aed-on-edge)
+for how each of the JD-named models would slot into this pipeline.
+
+---
+
 ## Architecture
 
 ```
@@ -303,6 +354,81 @@ small follow-up that would slot into `nano_kws/benchmark.py`.
 
 ---
 
+## Related work for AED on edge
+
+The Syntiant Audio Intern JD names a specific cluster of generative
+and pretrained-embedding models that target the **"only ~2 K labelled
+samples"** regime that AED tasks like turkey-gobble detection live in.
+This section is a one-paragraph summary of each, plus how it would
+slot into the `nano-kws` pipeline. None of these are implemented in
+this repo — this is the reading list, not a benchmark.
+
+### Generative augmentation (synthesise more training data)
+
+- **EcoGen** (Symes et al., 2024). Conditional generative model for
+  ecological / bird audio. Trained on a large corpus of wildlife
+  recordings, fine-tunes on a small target set (handful of clips) and
+  then synthesises plausible variations. *Slot in `nano-kws` pipeline:*
+  offline data-augmentation step before the training loop — emit
+  `(synthetic_waveform, label)` pairs into the `nano_kws.data.*`
+  dataset module so the rest of the train → quantize → export path is
+  unchanged. The interesting research questions are (a) what's the
+  real-vs-synthetic mixing ratio that maximises test accuracy, and
+  (b) does synthetic data help INT8 calibration as well as fp32
+  training. Both fall out as natural follow-ups of the augmentation
+  ablation methodology used in the [Augmentation pays you back in the
+  low-data regime section](#augmentation-pays-you-back-in-the-low-data-regime).
+- **BirdDiff** (Lin et al., 2024). Diffusion-based bird-sound
+  synthesizer. Same pipeline-slot as EcoGen; the interesting
+  trade-off is sample quality vs inference cost — diffusion models
+  are slower per-sample but produce sharper outputs, which matters
+  more for AED than for KWS because AED targets are often
+  high-frequency / transient.
+- **Audio LDM / AudioLDM 2** (Liu et al., 2023). Text-conditioned
+  latent diffusion for general audio (the "Text-to-Turkey" the JD
+  mentions is presumably AudioLDM with a turkey prompt). Lets the
+  user describe target sounds in language — *"a single turkey gobble
+  with light wind noise in the background"* — without needing
+  reference recordings of every variation. Useful for the very-low-N
+  classes where even EcoGen / BirdDiff don't have enough seed audio
+  to fine-tune on.
+
+### Pretrained audio embeddings (skip the from-scratch CNN)
+
+- **Perch 2.0** (Hamer et al., Google Research, 2023). Large
+  pretrained bird-sound classifier whose hidden representations
+  generalise well as a feature extractor for arbitrary AED targets.
+  *Slot in `nano-kws` pipeline:* swap the log-mel + DS-CNN frontend
+  for `Perch_embedding(waveform)` followed by a linear probe (or a
+  tiny MLP). With only ~2 K labelled samples, an embedding + linear
+  probe usually beats a from-scratch DS-CNN by a comfortable margin —
+  this is the same pattern as ImageNet-pretrained features beating
+  from-scratch CNNs on low-N image-classification tasks. The cost is
+  larger embedding-extractor inference (~10 MB of weights vs
+  `nano-kws`'s 100 KB), so deployment on a sub-mW NDP would require
+  distilling the Perch features back into a small student model —
+  that distillation step is itself a natural intern-project chunk.
+- **YAMNet** (Plakal & Ellis, Google, 2019) and **VGGish** (Hershey
+  et al., 2017). Older but battle-tested AudioSet-pretrained feature
+  extractors. Same lever as Perch 2.0 (embedding + linear probe), with
+  weaker representations but smaller and easier to integrate. Good
+  baseline to put alongside Perch in any "from-scratch vs pretrained
+  embedding" sweep.
+
+### How this maps to the nano-kws scope
+
+The closest things this repo *does* implement, that demonstrate the
+same underlying skills the JD-named work needs, are:
+
+| Skill the JD-named work needs | What `nano-kws` already shows |
+| --- | --- |
+| Adapt an audio classifier to a new label set | The 12-class Speech Commands setup is a `_silence_` + `_unknown_` + 10-keyword construction layered on top of the raw 35-class dataset; the recipe lives in [`nano_kws/data/speech_commands.py`](nano_kws/data/speech_commands.py). The same pattern works for any AED label set. |
+| Quantify the value of data augmentation in a low-data regime | [Augmentation pays you back in the low-data regime](#augmentation-pays-you-back-in-the-low-data-regime) is a 2 × 2 ablation that does this with classical (SpecAugment + bg-noise) augmentation as the cheap stand-in for generative augmentation. |
+| Few-shot transfer from a pretrained backbone to a new task | [Few-shot transfer: how much data do you actually need?](#few-shot-transfer-how-much-data-do-you-actually-need) trains a base DS-CNN on a held-out subset of the label set and then fine-tunes it on K samples per class for the held-out classes (K ∈ {10, 50, 200, 500}) — this is the structural analog of "fine-tune EcoGen on the 2 K turkey samples" minus the generative head. |
+| Honest INT8 deployment of the resulting model | The whole [TL;DR](#tldr-technical) + [QAT](#tldr-technical) story. |
+
+---
+
 ## Roadmap
 
 **MVP**
@@ -320,6 +446,13 @@ small follow-up that would slot into `nano_kws/benchmark.py`.
 - [x] C++ inference harness (ONNX Runtime C++ API) — `cpp/`
 - [x] Quantization-aware training (`make qat`) — custom STE fake-quant + per-channel weight quantization, 5-epoch fine-tune from the fp32 checkpoint, then standard PTQ; see `nano_kws/qat.py` and the *INT8 (QAT)* row in the TL;DR table.
 - [x] Hand-written depthwise-separable conv microbenchmark (NumPy → C scalar → C AVX2 vs ATen) — `cpp/microbench/` + `scripts/conv_microbench.py`. Run `make microbench-build && make microbench` to populate the [microbench table](#hand-written-conv-kernels-vs-aten) above.
+
+**Syntiant Audio Intern role-targeted additions** (in flight)
+
+- [x] AED reframing — explicit "From KWS to AED" section + Audio Intern callout in the Why-this-project-exists block (this commit).
+- [x] [Related work for AED on edge](#related-work-for-aed-on-edge) — survey of EcoGen / BirdDiff / AudioLDM / Perch 2.0 / YAMNet with how each plugs into the `nano-kws` pipeline (this commit).
+- [ ] [Few-shot transfer experiment](#few-shot-transfer-how-much-data-do-you-actually-need) — base DS-CNN trained on 8 of the 12 classes, then fine-tuned vs from-scratch on the held-out 4 at K ∈ {10, 50, 200, 500} samples/class. Mirrors the JD's "we only have ~2 K samples" setup.
+- [ ] [Augmentation in the low-data regime](#augmentation-pays-you-back-in-the-low-data-regime) — 2 × 2 ablation (full vs subsampled data, with vs without SpecAugment + bg-noise) quantifying the accuracy lift from classical augmentation as a cheap analogue for what generative augmentation buys you in EcoGen / BirdDiff.
 
 ---
 
