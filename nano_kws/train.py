@@ -39,7 +39,7 @@ from torch.utils.data import DataLoader
 from nano_kws import config
 from nano_kws.data.augment import BackgroundNoiseMixer, SpecAugment
 from nano_kws.data.features import LogMelSpectrogram
-from nano_kws.data.speech_commands import SpeechCommandsKWS
+from nano_kws.data.speech_commands import FilteredKwsDataset, SpeechCommandsKWS
 from nano_kws.models.ds_cnn import build_ds_cnn, count_macs, count_parameters
 
 logger = logging.getLogger("nano_kws.train")
@@ -48,6 +48,81 @@ logger = logging.getLogger("nano_kws.train")
 # ---------------------------------------------------------------------------
 # Device selection
 # ---------------------------------------------------------------------------
+
+
+def _load_pretrained_weights(
+    model: nn.Module,
+    checkpoint_path: Path,
+    *,
+    num_classes: int,
+) -> None:
+    """Load weights from a pretrained checkpoint, skipping head if the
+    output dim doesn't match.
+
+    Used by the few-shot transfer experiment: the base model is trained
+    on (e.g.) 8 classes (6 keywords + silence + unknown) and the novel
+    fine-tune is on 6 classes (4 different keywords + silence + unknown).
+    The DS-CNN backbone is structurally identical between the two; only
+    the final ``Linear`` (classifier head) has a different output dim.
+    We load everything that matches and re-initialise anything that
+    doesn't.
+    """
+    logger.info("--init-from %s", checkpoint_path)
+    state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    weights = state.get("model_state_dict", state)
+
+    # Identify the head by output-dim mismatch and drop those entries.
+    cur_state = model.state_dict()
+    skipped: list[str] = []
+    filtered: dict[str, torch.Tensor] = {}
+    for k, v in weights.items():
+        if k not in cur_state:
+            skipped.append(f"{k} (not in current model)")
+            continue
+        if cur_state[k].shape != v.shape:
+            skipped.append(f"{k} (shape mismatch {tuple(v.shape)} vs {tuple(cur_state[k].shape)})")
+            continue
+        filtered[k] = v
+
+    missing, unexpected = model.load_state_dict(filtered, strict=False)
+    logger.info(
+        "  Loaded %d/%d tensors from checkpoint into a %d-class model",
+        len(filtered),
+        len(weights),
+        num_classes,
+    )
+    if skipped:
+        logger.info("  Skipped %d tensors (head + shape mismatches): %s", len(skipped), skipped)
+    if missing:
+        logger.info("  %d randomly-initialised tensors: %s", len(missing), missing)
+    if unexpected:
+        logger.info("  %d unused checkpoint tensors: %s", len(unexpected), unexpected)
+
+
+def _freeze_backbone(model: nn.Module) -> None:
+    """Freeze every parameter except the final ``nn.Linear``.
+
+    Implements the linear-probe variant of fine-tuning. The DS-CNN's
+    classifier head is the last ``nn.Linear`` in the module tree.
+    """
+    last_linear: nn.Linear | None = None
+    for module in model.modules():
+        if isinstance(module, nn.Linear):
+            last_linear = module
+    if last_linear is None:
+        raise RuntimeError("Could not find an nn.Linear head to keep trainable.")
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in last_linear.parameters():
+        param.requires_grad = True
+    n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_total = sum(p.numel() for p in model.parameters())
+    logger.info(
+        "  Backbone frozen. Trainable parameters: %d / %d (%.2f%%)",
+        n_trainable,
+        n_total,
+        100.0 * n_trainable / n_total,
+    )
 
 
 def _pick_device(arg: str) -> torch.device:
@@ -229,6 +304,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--data-root", default=None, help="Override config.DATA_DIR.")
     parser.add_argument("--silence-per-class-ratio", type=float, default=1.0)
     parser.add_argument("--unknown-per-class-ratio", type=float, default=1.0)
+    parser.add_argument(
+        "--keyword-subset",
+        nargs="+",
+        default=None,
+        help=(
+            "Restrict the training+val dataset to these label names (e.g. "
+            "`--keyword-subset yes no _silence_ _unknown_`). If set, the "
+            "model output dim is reduced to len(keyword-subset) and the "
+            "checkpoint metadata records the new label space. Drives the "
+            "few-shot transfer experiment."
+        ),
+    )
+    parser.add_argument(
+        "--max-samples-per-class",
+        type=int,
+        default=None,
+        help=(
+            "Cap each kept class to N samples (deterministic given --seed). "
+            "Used for the augmentation ablation + few-shot transfer "
+            "experiments to simulate the AED-scale low-data regime."
+        ),
+    )
+    parser.add_argument(
+        "--init-from",
+        default=None,
+        help=(
+            "Optional path to a pretrained checkpoint to initialise model "
+            "weights from. The classifier head is re-initialised if its "
+            "shape doesn't match the new label space; the backbone "
+            "weights load via strict=False so e.g. a 6-class checkpoint "
+            "can seed a 4-class fine-tune."
+        ),
+    )
+    parser.add_argument(
+        "--freeze-backbone",
+        action="store_true",
+        help=(
+            "Freeze every parameter except the final classifier when used "
+            "with --init-from. Linear-probe variant of fine-tuning."
+        ),
+    )
     # Augmentation
     parser.add_argument(
         "--no-bg-mixer", action="store_true", help="Disable background-noise mixing."
@@ -278,20 +394,48 @@ def main(argv: list[str] | None = None) -> None:
 
     # ----- Data -----
     data_root = Path(args.data_root) if args.data_root else None
-    train_ds = SpeechCommandsKWS(
+    base_train = SpeechCommandsKWS(
         root=data_root,
         subset="training",
         unknown_per_class_ratio=args.unknown_per_class_ratio,
         silence_per_class_ratio=args.silence_per_class_ratio,
         seed=args.seed,
     )
-    val_ds = SpeechCommandsKWS(
+    base_val = SpeechCommandsKWS(
         root=data_root,
         subset="validation",
         unknown_per_class_ratio=args.unknown_per_class_ratio,
         silence_per_class_ratio=args.silence_per_class_ratio,
         seed=args.seed,
     )
+
+    if args.keyword_subset is not None or args.max_samples_per_class is not None:
+        kept_labels = (
+            args.keyword_subset if args.keyword_subset is not None else list(config.LABELS)
+        )
+        train_ds: SpeechCommandsKWS | FilteredKwsDataset = FilteredKwsDataset(
+            base_train,
+            kept_label_names=kept_labels,
+            max_samples_per_class=args.max_samples_per_class,
+            seed=args.seed,
+        )
+        # Validation always uses the full kept-class budget so the metric
+        # isn't noisy at low-data settings; filtering still applies so val
+        # accuracy is comparable to the new label space.
+        val_ds: SpeechCommandsKWS | FilteredKwsDataset = FilteredKwsDataset(
+            base_val,
+            kept_label_names=kept_labels,
+            max_samples_per_class=None,
+            seed=args.seed,
+        )
+        num_classes = train_ds.num_classes
+        label_names = train_ds.kept_label_names
+    else:
+        train_ds = base_train
+        val_ds = base_val
+        num_classes = config.NUM_CLASSES
+        label_names = list(config.LABELS)
+
     logger.info("Train: %d clips | Val: %d clips", len(train_ds), len(val_ds))
 
     pin = device.type == "cuda"
@@ -315,7 +459,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # ----- Model + featurizer + augmentation -----
     model = build_ds_cnn(
-        num_classes=config.NUM_CLASSES,
+        num_classes=num_classes,
         width_multiplier=args.width,
         n_blocks=args.n_blocks,
         base_channels=args.base_channels,
@@ -323,19 +467,29 @@ def main(argv: list[str] | None = None) -> None:
     n_params = count_parameters(model)
     n_macs = count_macs(model)
     logger.info(
-        "Model: width=%.2f channels=%d  params=%d  MACs=%d",
+        "Model: width=%.2f channels=%d  params=%d  MACs=%d  num_classes=%d",
         args.width,
         model.channels,
         n_params,
         n_macs,
+        num_classes,
     )
+
+    if args.init_from is not None:
+        _load_pretrained_weights(model, Path(args.init_from), num_classes=num_classes)
+        if args.freeze_backbone:
+            _freeze_backbone(model)
+            logger.info(
+                "--freeze-backbone: only the classifier head will be trained "
+                "(linear-probe variant of fine-tuning)."
+            )
 
     featurizer = LogMelSpectrogram().to(device)
 
     bg_mixer: nn.Module | None = None
-    if not args.no_bg_mixer and train_ds._bg_clips:
+    if not args.no_bg_mixer and base_train._bg_clips:
         bg_mixer = BackgroundNoiseMixer(
-            train_ds._bg_clips,
+            base_train._bg_clips,
             p=args.bg_mix_prob,
             snr_db_range=(args.snr_db_low, args.snr_db_high),
         ).to(device)
@@ -384,7 +538,7 @@ def main(argv: list[str] | None = None) -> None:
         width=args.width,
         n_blocks=args.n_blocks,
         base_channels=args.base_channels,
-        num_classes=config.NUM_CLASSES,
+        num_classes=num_classes,
         epochs=args.epochs,
         batch_size=args.batch_size,
         lr=args.lr,
@@ -456,16 +610,23 @@ def main(argv: list[str] | None = None) -> None:
                 {
                     "model_state_dict": model.state_dict(),
                     "model_config": {
-                        "num_classes": config.NUM_CLASSES,
+                        "num_classes": num_classes,
                         "width_multiplier": args.width,
                         "n_blocks": args.n_blocks,
                         "base_channels": args.base_channels,
                     },
                     "train_config": asdict(train_cfg),
+                    "label_names": label_names,
                     "epoch": epoch,
                     "val_acc": val_acc,
                     "parameters": n_params,
                     "macs": n_macs,
+                    "init_from": str(args.init_from) if args.init_from else None,
+                    "freeze_backbone": bool(args.freeze_backbone),
+                    "max_samples_per_class": args.max_samples_per_class,
+                    "keyword_subset": list(label_names)
+                    if args.keyword_subset is not None
+                    else None,
                 },
                 ckpt_path,
             )

@@ -251,6 +251,77 @@ for how each of the JD-named models would slot into this pipeline.
 
 ---
 
+## Few-shot transfer: how much data do you actually need?
+
+The JD's central data problem is **~2 K labelled samples** of a novel
+target sound (turkey gobble). The standard answer is to fine-tune a
+pretrained audio model rather than train from scratch — but how much
+does that actually buy you, and at what data budget does the gap
+close?
+
+This experiment runs the structural analog on Speech Commands:
+
+1. **Base task** (the pretrained-audio-model stand-in): train
+   DS-CNN-w0.5 on 6 keywords (`down, left, no, right, up, yes`) +
+   `_silence_` + `_unknown_` = 8 classes.
+2. **Novel task**: the held-out 4 keywords (`go, off, on, stop`) +
+   `_silence_` + `_unknown_` = 6 classes — labels the base model
+   never saw.
+3. For each K ∈ {10, 50, 200, 500} samples per novel class, train
+   two DS-CNN-w0.5 models head-to-head: a **from-scratch** baseline
+   and a **fine-tuned** variant initialised from the base checkpoint
+   with a fresh 6-way head.
+
+Reproduce with `python -m scripts.few_shot --update-readme`. Raw
+artefacts land in `runs/few_shot/` (gitignored) and the rendered
+table mirrors [`assets/few_shot_table.md`](assets/few_shot_table.md).
+The K = 200 row is the AED-relevant one — it maps directly to the
+"~200 turkey gobble samples per class" regime the JD describes.
+
+<!-- BEGIN_FEW_SHOT_TABLE -->
+
+_Table not yet generated. Run `python -m scripts.few_shot --update-readme`
+to populate; takes ~60-90 min on a modern laptop CPU._
+
+<!-- END_FEW_SHOT_TABLE -->
+
+---
+
+## Augmentation pays you back in the low-data regime
+
+Before reaching for a generative model like EcoGen / BirdDiff /
+AudioLDM, the cheap question is: **how much accuracy does
+classical augmentation buy you?** This experiment quantifies it for
+DS-CNN-w0.5 across three data budgets — 50, 200, and 500 samples
+per class — with and without SpecAugment + background-noise mixing
+toggled on.
+
+The interpretation:
+
+* The *with-augmentation* column is what classical augmentation
+  alone can deliver at each data budget. This is the floor any
+  generative-augmentation experiment needs to beat to be worth the
+  added complexity.
+* The *lift* column is the upper bound of what *classical*
+  augmentation can recover. A generative model only beats this if
+  it produces structure SpecAugment + bg-noise can't synthesise
+  (different speakers, different recording environments, different
+  phoneme combinations — the things you'd actually need a generative
+  model for).
+
+Reproduce with `python -m scripts.aug_ablation --update-readme`. Raw
+artefacts land in `runs/aug_ablation/` (gitignored) and the rendered
+table mirrors [`assets/aug_ablation_table.md`](assets/aug_ablation_table.md).
+
+<!-- BEGIN_AUG_ABLATION_TABLE -->
+
+_Table not yet generated. Run `python -m scripts.aug_ablation --update-readme`
+to populate; takes ~30-60 min on a modern laptop CPU._
+
+<!-- END_AUG_ABLATION_TABLE -->
+
+---
+
 ## Architecture
 
 ```

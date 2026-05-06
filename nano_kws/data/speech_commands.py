@@ -255,6 +255,136 @@ class SpeechCommandsKWS(Dataset):
 
 
 # ---------------------------------------------------------------------------
+# Filtered / remapped wrapper for the AED + few-shot experiments.
+# ---------------------------------------------------------------------------
+
+
+# ─── Interview note: why a wrapper instead of touching SpeechCommandsKWS ────
+# The base dataset is the canonical 12-class KWS construction and is used
+# by every other phase of the repo (training, quantize calibration,
+# benchmarking). Adding "filter to a subset of classes" or "subsample per
+# class" knobs directly to it would put two unrelated concerns in the same
+# class. Instead, FilteredKwsDataset wraps an already-built base dataset
+# and (a) keeps only items whose label is in `kept_label_names`,
+# (b) remaps those labels to a contiguous [0 .. K-1) index space so a
+# smaller-head model can be trained on them, and (c) optionally caps each
+# kept class to `max_samples_per_class` items for the few-shot / low-data
+# experiments. The base instance is unchanged — the wrapper only stores
+# indices into it.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+class FilteredKwsDataset(Dataset):
+    """Restrict a :class:`SpeechCommandsKWS` to a subset of classes and
+    optionally cap each class to ``max_samples_per_class`` items.
+
+    Drives two role-targeted experiments in this repo:
+
+    * **Augmentation ablation** ([scripts/aug_ablation.py][aug]) — keep
+      all 12 classes but subsample to ~200 items/class to simulate the
+      low-data regime that AED tasks like turkey-gobble detection live
+      in.
+    * **Few-shot transfer** ([scripts/few_shot.py][fs]) — split the 10
+      keywords into a "base" set of 6 (used to pretrain a feature
+      extractor) and a "novel" set of 4, then fine-tune the
+      pretrained backbone on K samples per novel class for K ∈
+      {10, 50, 200, 500}.
+
+    [aug]: ../../scripts/aug_ablation.py
+    [fs]: ../../scripts/few_shot.py
+
+    Parameters
+    ----------
+    base
+        An already-constructed :class:`SpeechCommandsKWS` instance.
+        Built once and reused across multiple filtered views without
+        re-walking the raw archive.
+    kept_label_names
+        Subset of label *names* (e.g. ``["yes", "no", "_silence_",
+        "_unknown_"]``) to retain. Ordering of this list defines the
+        new label-index space: the i-th name in the list becomes label
+        ``i`` in the wrapped dataset.
+    max_samples_per_class
+        If given, each kept class is randomly subsampled (without
+        replacement, deterministic given ``seed``) to at most this
+        many items. Used to simulate AED-scale data budgets.
+    seed
+        RNG seed for the subsampling step. Two filtered views with the
+        same args and the same seed yield bit-identical indices.
+    """
+
+    def __init__(
+        self,
+        base: SpeechCommandsKWS,
+        kept_label_names: list[str],
+        *,
+        max_samples_per_class: int | None = None,
+        seed: int = 0,
+    ) -> None:
+        if not kept_label_names:
+            raise ValueError("kept_label_names cannot be empty.")
+        unknown_names = [n for n in kept_label_names if n not in config.LABEL_TO_INDEX]
+        if unknown_names:
+            raise ValueError(
+                f"Unknown label name(s) {unknown_names!r}. Valid names: {list(config.LABELS)!r}"
+            )
+
+        self._base = base
+        self.kept_label_names: list[str] = list(kept_label_names)
+        self._kept_label_indices: list[int] = [config.LABEL_TO_INDEX[n] for n in kept_label_names]
+        self._old_to_new: dict[int, int] = {
+            old: new for new, old in enumerate(self._kept_label_indices)
+        }
+
+        # Bucket base indices by their (12-class) label so we can subsample per class.
+        per_class_buckets: dict[int, list[int]] = {idx: [] for idx in self._kept_label_indices}
+        for base_idx in range(len(base)):
+            kind, payload = base._index[base_idx]
+            label = base._label_for(kind, payload)
+            if label in per_class_buckets:
+                per_class_buckets[label].append(base_idx)
+
+        rng = random.Random(seed)
+        chosen: list[int] = []
+        per_class_kept: dict[int, int] = {}
+        for label_idx in self._kept_label_indices:
+            bucket = per_class_buckets[label_idx]
+            if max_samples_per_class is not None and len(bucket) > max_samples_per_class:
+                bucket = rng.sample(bucket, max_samples_per_class)
+            chosen.extend(bucket)
+            per_class_kept[label_idx] = len(bucket)
+
+        rng.shuffle(chosen)
+        self._chosen_base_indices: list[int] = chosen
+        self._per_class_kept: dict[int, int] = per_class_kept
+
+        logger.info(
+            "FilteredKwsDataset: %d items across %d classes (max_per_class=%s) | per-class: %s",
+            len(self._chosen_base_indices),
+            len(self.kept_label_names),
+            max_samples_per_class,
+            {config.INDEX_TO_LABEL[k]: v for k, v in sorted(self._per_class_kept.items())},
+        )
+
+    @property
+    def num_classes(self) -> int:
+        return len(self.kept_label_names)
+
+    @property
+    def class_counts(self) -> dict[int, int]:
+        """``{new_label_index: n_samples}``."""
+        return {self._old_to_new[old]: n for old, n in self._per_class_kept.items()}
+
+    def __len__(self) -> int:
+        return len(self._chosen_base_indices)
+
+    def __getitem__(self, i: int) -> tuple[torch.Tensor, int]:
+        base_idx = self._chosen_base_indices[i]
+        wav, old_label = self._base[base_idx]
+        return wav, self._old_to_new[old_label]
+
+
+# ---------------------------------------------------------------------------
 # CLI sanity check.
 # ---------------------------------------------------------------------------
 
